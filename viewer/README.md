@@ -38,7 +38,7 @@ colour shows status (grey todo, yellow in progress, green done, red blocked).
 | `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
 | `fixtures/jira_search_sample.json` | Recorded Jira search response, used by the adapter tests |
 | `rust/` | Rust + [ratatui](https://ratatui.rs) implementation |
-| `python/` | Python + Textual implementation (planned) |
+| `python/` | Python + [Textual](https://textual.textualize.io) implementation |
 
 ## Data format
 
@@ -97,6 +97,39 @@ cargo test --all-features
 These cover model validation, layout geometry (no sibling overlap, children inside parents,
 edge lifting, edge routing around boxes, filters, drill-in scope), Jira mapping against the
 recorded fixture, and UI behaviour through ratatui's `TestBackend`.
+
+## Python implementation
+
+Same features, same keys, and **the same frames**. Layout and rendering are a direct port
+of the Rust code, and `tests/test_parity.py` checks that both viewers produce byte-identical
+snapshots. Popups are native Textual screens: the help overlay, the relationship filters
+(a `SelectionList`) and the search prompt (an `Input`). The details panel is a docked widget.
+
+```sh
+cd viewer/python
+python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
+.venv/bin/clio-viewer --file ../fixtures/sample.json
+```
+
+Jira needs no extra dependencies here (it uses the standard library's HTTP client):
+
+```sh
+.venv/bin/clio-viewer --jira --jql 'project = CLIO'   # same JIRA_* env vars as above
+```
+
+`--snapshot WxH` and `--keys` work as in Rust (normal-mode keys only; popups are
+interactive).
+
+### Tests
+
+```sh
+.venv/bin/python -m pytest
+```
+
+The suite covers model validation, layout geometry and routing, Jira mapping and pagination
+(with a mocked HTTP client), view state, Textual UI behaviour through `Pilot`, and the Rust↔Python
+parity check. The parity check runs only when the Rust binary has been built (`cargo build`
+in `viewer/rust`) or `CLIO_RUST_BIN` is set.
 
 ## Keys
 
