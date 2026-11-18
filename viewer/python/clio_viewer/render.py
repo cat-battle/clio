@@ -167,6 +167,7 @@ def render_canvas(
     for b in layout.boxes:
         if b.expanded:
             _draw_box(pen, graph, b, selected, zoom, trace, theme)
+    pen.bg = theme.background
     # Traced edges go last so they win where wires overlap.
     lit = [e for e in layout.edges if trace is None or trace.edge_traced(e.source, e.target, e.type)]
     grey = [e for e in layout.edges if trace is not None and not trace.edge_traced(e.source, e.target, e.type)]
@@ -175,6 +176,7 @@ def render_canvas(
     for b in layout.boxes:
         if not b.expanded:
             _draw_box(pen, graph, b, selected, zoom, trace, theme)
+    pen.bg = theme.background
     for e in grey + lit:
         color = _edge_color(graph, e, trace, theme)
         pen.put_fg(e.from_port[0], e.from_port[1], "├", color)
@@ -207,11 +209,12 @@ def _draw_box(
     r = b.bounds
     x0, y0, x1, y1 = r.x, r.y, r.right - 1, r.bottom - 1
 
-    # Closed boxes are filled like cards; open containers (and boxes greyed
-    # out by a trace) sit on the canvas background.
-    outer = th.background
-    fill = outer if b.expanded or dimmed else th.card
-    pen.bg = outer
+    # Closed boxes are filled like cards, border cells included (the line sits
+    # mid-cell, so anything else leaves a dark gutter inside it). Open
+    # containers and boxes greyed out by a trace sit on the canvas background.
+    # The caller restores ``pen.bg``.
+    fill = th.background if b.expanded or dimmed else th.card
+    pen.bg = fill
     blank = CellStyle(None, fill)
     for y in range(y0 + 1, y1):
         for x in range(x0 + 1, x1):
@@ -235,7 +238,6 @@ def _draw_box(
         pen.text(x1 - 3, y0, "[-]", 3, bstyle)
         return
 
-    pen.bg = fill
     dim = CellStyle(th.faint if dimmed else th.subtle)
     plain = paint(CellStyle(th.body))
     rows = r.h - 2  # text rows inside the border
@@ -265,7 +267,6 @@ def _draw_box(
     else:
         pen.text(x0 + 1, y0 + 1, truncate(item.id, inner), inner, title_style)
 
-    pen.bg = outer
     kids = len(graph.children(b.node))
     if kids:
         tag = "+" if zoom is Zoom.OVERVIEW else f"[+{kids}]"

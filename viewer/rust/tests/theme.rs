@@ -71,3 +71,47 @@ fn mocha_paints_the_background_and_fills_cards() {
     let (_, classic) = styles(&CLASSIC, "<space>");
     assert!(!classic.contains('#'), "classic leaves the terminal background alone");
 }
+
+/// Background colour name of every canvas cell, from a `--styles` dump.
+fn backgrounds(dump: &str) -> Vec<Vec<String>> {
+    dump.lines()
+        .map(|line| {
+            let mut row = Vec::new();
+            for tok in line.split(' ').filter(|t| !t.is_empty()) {
+                let (n, st) = tok.split_once('*').unwrap();
+                let bg = st.split('/').nth(1).unwrap().to_string();
+                row.extend(std::iter::repeat_n(bg, n.parse().unwrap()));
+            }
+            row
+        })
+        .collect()
+}
+
+#[test]
+fn cards_are_filled_up_to_and_under_their_border() {
+    let card = clio_viewer::render::color_name(MOCHA.card);
+    for keys in ["", "<space>", "e", "<space>l<space>jjlt"] {
+        let mut a = App::new(common::sample_graph(), None);
+        let (_, dump) = snapshot_styles(&mut a, 160, 40, &parse_keys(keys).unwrap()).unwrap();
+        let bgs = backgrounds(&dump);
+        let trace = a.trace();
+        let mut checked = 0;
+        for b in a.layout.boxes.iter() {
+            let greyed = trace.as_ref().is_some_and(|t| t.role(b.node).is_none());
+            if b.expanded || Some(b.node) == a.selected || greyed {
+                continue;
+            }
+            let r = b.bounds;
+            for y in r.y..r.bottom() {
+                for x in r.x..r.right() {
+                    let (sx, sy) = (x - a.camera.0, y - a.camera.1);
+                    if let Some(bg) = bgs.get(sy as usize).and_then(|row| row.get(sx as usize)).filter(|_| sx >= 0 && sy >= 0) {
+                        assert_eq!(bg, &card, "{keys}: {} at ({}, {})", a.graph.item(b.node).id, x - r.x, y - r.y);
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 50, "{keys}: {checked}");
+    }
+}

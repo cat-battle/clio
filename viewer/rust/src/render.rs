@@ -200,11 +200,12 @@ impl Canvas<'_> {
         let r = b.bounds;
         let (x0, y0, x1, y1) = (r.x, r.y, r.right() - 1, r.bottom() - 1);
 
-        // Closed boxes are filled like cards; open containers (and boxes
-        // greyed out by a trace) sit on the canvas background.
-        let outer = th.background;
-        let fill = if b.expanded || dimmed { outer } else { th.card };
-        pen.bg = outer;
+        // Closed boxes are filled like cards, border cells included (the line
+        // sits mid-cell, so anything else leaves a dark gutter inside it).
+        // Open containers and boxes greyed out by a trace sit on the canvas
+        // background. The caller restores `pen.bg`.
+        let fill = if b.expanded || dimmed { th.background } else { th.card };
+        pen.bg = fill;
         let blank = Style::default().bg(fill);
         for y in y0 + 1..y1 {
             for x in x0 + 1..x1 {
@@ -237,7 +238,6 @@ impl Canvas<'_> {
         let kids = self.graph.children(b.node).len();
         let dim = Style::default().fg(if dimmed { th.faint } else { th.subtle });
         let plain = paint(Style::default().fg(th.body));
-        pen.bg = fill;
         let rows = r.h - 2; // text rows inside the border
         let w = inner.max(0) as usize;
         match self.zoom {
@@ -277,7 +277,6 @@ impl Canvas<'_> {
                 pen.text(x0 + 1, y0 + 1, &truncate(&item.id, inner as usize), inner, title_style);
             }
         }
-        pen.bg = outer;
         if kids > 0 {
             let tag = match self.zoom {
                 Zoom::Overview => "+".to_string(),
@@ -361,6 +360,7 @@ impl Widget for Canvas<'_> {
         for b in self.layout.boxes.iter().filter(|b| b.expanded) {
             self.draw_box(&mut pen, b);
         }
+        pen.bg = self.theme.background;
         // Traced edges go last so they win where wires overlap.
         let (lit, grey): (Vec<&Edge>, Vec<&Edge>) = self
             .layout
@@ -373,6 +373,7 @@ impl Widget for Canvas<'_> {
         for b in self.layout.boxes.iter().filter(|b| !b.expanded) {
             self.draw_box(&mut pen, b);
         }
+        pen.bg = self.theme.background;
         for &e in grey.iter().chain(&lit) {
             let color = self.edge_color(e);
             pen.put_fg(e.from_port.0, e.from_port.1, "├", color);

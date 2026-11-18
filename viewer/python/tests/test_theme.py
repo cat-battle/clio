@@ -95,3 +95,34 @@ def test_theme_switch_in_textual_app():
             assert "colour theme" in str(app.screen.query_one("#help").render())
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("keys", ["", " ", "e", " l jjlt"])
+def test_cards_are_filled_up_to_and_under_their_border(keys):
+    """No gutter of canvas background between a card's border line and its fill."""
+    from clio_viewer.keys import parse_keys
+
+    s = ViewerState(Graph(sample_doc()))
+    s.theme = MOCHA
+    snapshot_styles(s, 160, 40, parse_keys(keys.replace(" ", "<space>")))
+    _, dump = snapshot_styles(s, 160, 40, [])
+    bgs = []
+    for line in dump.splitlines():
+        row = []
+        for tok in line.split():
+            n, st = tok.split("*", 1)
+            row += [st.split("/")[1]] * int(n)
+        bgs.append(row)
+    trace = s.trace()
+    checked = 0
+    for b in s.layout.boxes:
+        if b.expanded or b.node == s.selected or (trace and trace.role(b.node) is None):
+            continue
+        r = b.bounds
+        for y in range(r.y, r.bottom):
+            for x in range(r.x, r.right):
+                sx, sy = x - s.camera[0], y - s.camera[1]
+                if 0 <= sy < len(bgs) and 0 <= sx < len(bgs[sy]):
+                    assert bgs[sy][sx] == MOCHA.card, (s.graph.item(b.node).id, x - r.x, y - r.y, bgs[sy][sx])
+                    checked += 1
+    assert checked > 50
