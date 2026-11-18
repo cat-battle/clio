@@ -6,7 +6,7 @@ import argparse
 import os
 import sys
 
-from .adapters import FileLoader, JiraLoader, Loader
+from .adapters import FileLoader, Loader
 from .keys import parse_keys
 from .model import Graph, ValidationError
 from .state import ViewerState
@@ -25,10 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="clio-viewer",
         description="Schematic-style TUI for Clio task hierarchies (Milestone → Epic → Story → Subtask).",
     )
-    src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument("--file", metavar="PATH", help="load a Clio task document (JSON, see viewer/schema)")
-    src.add_argument("--jira", action="store_true", help="load from Jira Cloud (JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN)")
-    p.add_argument("--jql", metavar="QUERY", help="JQL query selecting the issues to show (with --jira)")
+    p.add_argument("--file", metavar="PATH", required=True, help="load a Clio task document (JSON, see viewer/schema)")
     p.add_argument("--snapshot", metavar="WxH", type=_parse_size, help="print one WIDTHxHEIGHT frame instead of running interactively")
     p.add_argument("--keys", metavar="SCRIPT", help='keys to replay before the snapshot, e.g. "<space>j<enter>"')
     p.add_argument(
@@ -44,14 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.jira and not args.jql:
-        parser.error("--jira requires --jql")
     if args.keys and not args.snapshot:
         parser.error("--keys requires --snapshot")
     if args.styles and not args.snapshot:
         parser.error("--styles requires --snapshot")
     try:
-        loader: Loader = JiraLoader.from_env(args.jql) if args.jira else FileLoader(args.file)
+        loader: Loader = FileLoader(args.file)
         graph = Graph(loader.load())
     except ValidationError as e:
         print(f"error: {e}", file=sys.stderr)

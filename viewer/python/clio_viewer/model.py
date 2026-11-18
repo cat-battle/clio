@@ -167,7 +167,7 @@ def _clean(s: str | None, keep_newlines: bool = False) -> str | None:
 
 def sanitize(doc: Document) -> Document:
     """Returns a copy of ``doc`` with every control character replaced by a
-    space, so data from a file or Jira cannot send escape sequences (OSC 52
+    space, so data from a file cannot send escape sequences (OSC 52
     clipboard writes, hyperlinks, ...) to the terminal. Descriptions keep
     ``\\n``. Mirrors ``sanitize`` in ``viewer/rust/src/model.rs``."""
     items = [

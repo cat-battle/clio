@@ -1,14 +1,12 @@
-//! Pluggable data sources. Every loader produces the same [`Document`].
+//! Data sources. The viewer is offline: documents come from local JSON files.
 
 pub mod file;
-pub mod jira;
 
 use anyhow::Result;
 
 use crate::model::Document;
 
 pub use file::FileLoader;
-pub use jira::JiraLoader;
 
 pub trait Loader {
     fn load(&self) -> Result<Document>;

@@ -25,6 +25,8 @@ identical screens.
   cone tracing in an RTL viewer.
 - **Mouse:** click to select, click `[+N]` / an open box's title bar to open or
   close it, double right-click to close the open box under the pointer, wheel to pan.
+- **Offline:** reads one local JSON file; no network access, no Jira or other
+  service connections.
 - **Colour themes:** Catppuccin Mocha (the palette clik uses, with its own
   background and card-filled boxes) or the classic 16 terminal colours.
 
@@ -49,7 +51,7 @@ colour shows status (grey todo, yellow in progress, green done, red blocked).
 `[+N]` marks a closed box with N children, `[-]` an open one.
 
 For the full user guide (reading the screen, every key, tracing, organising your
-data, exporting from a database, Jira, troubleshooting) see
+data, exporting from a database, troubleshooting) see
 **[docs/guide.md](docs/guide.md)**.
 
 ## Quick start
@@ -73,8 +75,8 @@ scripts\viewer.ps1 test
 
 | Command | What it does |
 |---|---|
-| `install [rust\|python\|all] [--jira]` | Checks for `cargo` / Python 3.10+ and says how to install them if missing, builds the Rust viewer (release) and creates `python/.venv`. `--jira` builds the Rust viewer with Jira support. |
-| `run rust\|python [viewer options]` | Runs a viewer, installing it first if needed (and rebuilding the Rust viewer if its source changed, keeping `--jira` if you installed with it). Without `--file` or `--jira` it opens the sample plan. Options go straight to the viewer; relative paths resolve from your current directory. |
+| `install [rust\|python\|all]` | Checks for `cargo` / Python 3.10+ and says how to install them if missing, builds the Rust viewer (release) and creates `python/.venv`. |
+| `run rust\|python [viewer options]` | Runs a viewer, installing it first if needed (and rebuilding the Rust viewer if its source changed). Without `--file` it opens the sample plan. Options go straight to the viewer; relative paths resolve from your current directory. |
 | `test [rust\|python\|all]` | `cargo test`, and `pytest` including the Rust/Python parity tests. |
 
 Prerequisites: a Rust toolchain for the Rust viewer, Python 3.10+ for the Python
@@ -201,11 +203,10 @@ SQLite schema + export script.
 
 | Path | What |
 |---|---|
-| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, Jira, troubleshooting |
+| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, troubleshooting |
 | `scripts/` | `viewer.sh` (Linux/macOS) and `viewer.ps1` (Windows, PowerShell 7): install, run and test both viewers |
 | `schema/clio-tasks.schema.json` | Canonical data format shared by both implementations |
 | `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
-| `fixtures/jira_search_sample.json` | Recorded Jira search response, used by the adapter tests |
 | `rust/` | Rust + [ratatui](https://ratatui.rs) implementation |
 | `python/` | Python + [Textual](https://textual.textualize.io) implementation |
 
@@ -215,8 +216,7 @@ Both viewers take the same options:
 
 | Option | Meaning |
 |---|---|
-| `--file PATH` | load a Clio JSON file |
-| `--jira --jql QUERY` | load from Jira Cloud (see below) |
+| `--file PATH` | the Clio JSON file to show (required) |
 | `--theme NAME` | `mocha` or `classic` |
 | `--snapshot WxH` | print one frame of width W and height H as text instead of running interactively |
 | `--keys SCRIPT` | with `--snapshot`: replay keys first (`<space>`, `<enter>`, `<esc>`, `<S-left>`, …) |
@@ -233,36 +233,19 @@ cd viewer/rust
 cargo run --release -- --file ../fixtures/sample.json
 ```
 
-### Jira
+### Security
 
-The Jira adapter calls `GET /rest/api/3/search/jql`. It maps issue types to kinds
-(by name, falling back to hierarchy level), `parent` to parent, `issuelinks` to links
-(using the outward name, e.g. `relates_to`), and status category to status. It needs
-the `jira` cargo feature:
-
-```sh
-export JIRA_URL=https://your-site.atlassian.net JIRA_EMAIL=you@example.com JIRA_API_TOKEN=...
-cargo run --release --features jira -- --jira --jql 'project = CLIO'
-```
-
-The `jira` feature uses `reqwest` with `rustls`, which builds the AWS-LC C library
-(`aws-lc-sys`). That needs a C toolchain, and on Windows possibly more (see the
-aws-lc-rs build requirements if the build fails). The Python viewer's Jira loader
-needs no build at all. Neither loader has been tried against a live Jira site yet.
-
-**Security.** Both loaders require an `https://` `JIRA_URL` and never follow
-redirects, so your token is never re-sent to another host or over plain http. A
-redirect is reported as an error instead. Every text field read from a file or from Jira
-has its control characters replaced with spaces (descriptions keep newlines), so
-task data can't send escape sequences such as OSC 52 clipboard writes to your terminal.
-Known and accepted: both HTTP clients honour `HTTPS_PROXY` and the system proxy;
-`JIRA_API_TOKEN` is inherited by child processes of your shell; and `TEXTUAL_*`
-environment variables can change how the Python viewer behaves.
+The viewer is fully offline: neither implementation has any networking code, and
+the Rust build pulls in no HTTP or TLS crates. Every text field read from the
+file has its control characters replaced with spaces (descriptions keep
+newlines), so task data can't send escape sequences such as OSC 52 clipboard
+writes to your terminal. `TEXTUAL_*` environment variables can change how the
+Python viewer behaves.
 
 ### Tests
 
 ```sh
-cargo test              # add --all-features to include the Jira HTTP client
+cargo test
 ```
 
 The tests cover:
@@ -275,7 +258,6 @@ The tests cover:
 - auto-fit and fill-the-terminal;
 - the `x` key and mouse input, including double right-click timing;
 - themes and backgrounds;
-- Jira mapping against the recorded fixture;
 - UI behaviour through ratatui's `TestBackend`.
 
 ## Python implementation
@@ -293,12 +275,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 .venv/bin/clio-viewer --file ../fixtures/sample.json
 ```
 
-Python 3.10 or newer. Jira needs no extra dependencies here (it uses the standard
-library's HTTP client):
-
-```sh
-.venv/bin/clio-viewer --jira --jql 'project = CLIO'   # same JIRA_* env vars as above
-```
+Python 3.10 or newer.
 
 `--snapshot`, `--keys` and `--styles` work as in Rust. Only normal-mode keys are
 supported, because popups are interactive.
@@ -310,7 +287,6 @@ supported, because popups are interactive.
 ```
 
 The suite covers the same areas as the Rust tests, plus:
-- Jira pagination, with a mocked HTTP client;
 - Textual UI behaviour through `Pilot`: keys, clicks and right-clicks, popups,
   theme switching;
 - the Rust↔Python parity check.

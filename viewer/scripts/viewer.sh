@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Install, run and test the Clio viewers on Linux (and macOS).
 #
-#   scripts/viewer.sh install [rust|python|all] [--jira]
+#   scripts/viewer.sh install [rust|python|all]
 #   scripts/viewer.sh run rust|python [viewer args...]
 #   scripts/viewer.sh test [rust|python|all]
 #
-# `run` installs first if needed and, without --file or --jira, opens the
+# `run` installs first if needed and, without --file, opens the
 # sample plan. Relative paths in viewer arguments are resolved from the directory
 # you run the script in. Set CLIO_PYTHON to choose a Python interpreter.
 set -euo pipefail
@@ -17,8 +17,6 @@ VENV="$PY_DIR/.venv"
 RUST_BIN="$RUST_DIR/target/release/clio-viewer"
 PY_BIN="$VENV/bin/clio-viewer"
 SAMPLE="$VIEWER_DIR/fixtures/sample.json"
-# Remembers `install --jira`, so later rebuilds keep the same features.
-FEATURES_FILE="$RUST_DIR/target/release/.clio-features"
 
 if [[ -t 2 ]]; then BLUE=$'\033[1;34m' RED=$'\033[1;31m' OFF=$'\033[0m'; else BLUE='' RED='' OFF=''; fi
 say() { printf '%s==>%s %s\n' "$BLUE" "$OFF" "$*" >&2; }
@@ -52,18 +50,12 @@ find_python() {
 # --- commands --------------------------------------------------------------
 
 build_rust() {  # build_rust [quiet]
-    local features=() note=""
-    if [[ "${JIRA:-0}" == 1 ]]; then
-        features=(--features jira)
-        note=", with Jira support"
-    fi
     if [[ "${1:-}" == quiet ]]; then
-        (cd "$RUST_DIR" && cargo build --release --quiet ${features[@]+"${features[@]}"})
+        (cd "$RUST_DIR" && cargo build --release --quiet)
     else
-        say "Building the Rust viewer (release$note)"
-        (cd "$RUST_DIR" && cargo build --release ${features[@]+"${features[@]}"})
+        say "Building the Rust viewer (release)"
+        (cd "$RUST_DIR" && cargo build --release)
     fi
-    if [[ "${JIRA:-0}" == 1 ]]; then echo jira >"$FEATURES_FILE"; else rm -f "$FEATURES_FILE"; fi
 }
 
 install_rust() {
@@ -72,8 +64,8 @@ install_rust() {
     say "Rust viewer: $RUST_BIN"
 }
 
-# Before running: rebuild if the sources changed (a no-op otherwise), with the
-# features chosen at install time. Without cargo, run whatever is there.
+# Before running: rebuild if the sources changed (a no-op otherwise). Without
+# cargo, run whatever is there.
 refresh_rust() {
     if ! command -v cargo >/dev/null 2>&1; then
         [[ -x "$RUST_BIN" ]] || need_cargo
@@ -83,7 +75,6 @@ refresh_rust() {
         install_rust
         return
     fi
-    [[ -f "$FEATURES_FILE" ]] && JIRA=1
     build_rust quiet
 }
 
@@ -103,11 +94,9 @@ install_python() {
 
 cmd_install() {
     local which=all
-    JIRA=0
     for arg in "$@"; do
         case "$arg" in
             rust|python|all) which="$arg" ;;
-            --jira) JIRA=1 ;;
             -h|--help) usage ;;
             *) die "install: unknown argument '$arg'" ;;
         esac
@@ -132,7 +121,7 @@ cmd_run() {
     # No data source given: show the sample plan.
     local arg has_source=0
     for arg in "$@"; do
-        case "$arg" in --file|--file=*|--jira) has_source=1 ;; esac
+        case "$arg" in --file|--file=*) has_source=1 ;; esac
     done
     [[ $has_source == 1 ]] || set -- --file "$SAMPLE" "$@"
     exec "$bin" "$@"

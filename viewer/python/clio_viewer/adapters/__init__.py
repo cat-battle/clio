@@ -1,4 +1,4 @@
-"""Pluggable data sources. Every loader produces the same :class:`Document`."""
+"""Data sources. The viewer is offline: documents come from local JSON files."""
 
 from __future__ import annotations
 
@@ -6,9 +6,8 @@ from typing import Protocol
 
 from ..model import Document
 from .file import FileLoader
-from .jira import JiraLoader
 
-__all__ = ["FileLoader", "JiraLoader", "Loader"]
+__all__ = ["FileLoader", "Loader"]
 
 
 class Loader(Protocol):

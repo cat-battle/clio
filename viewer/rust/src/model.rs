@@ -115,7 +115,7 @@ pub struct Graph {
 }
 
 /// Replaces every control character (Unicode Cc: C0, DEL, C1) with a space,
-/// so data from a file or Jira cannot send escape sequences (OSC 52 clipboard
+/// so data from a file cannot send escape sequences (OSC 52 clipboard
 /// writes, hyperlinks, ...) to the terminal. Descriptions keep `\n`.
 /// Mirrors `sanitize` in `viewer/python/clio_viewer/model.py`.
 pub fn sanitize(doc: &mut Document) {

@@ -5,7 +5,7 @@ use clap::Parser;
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use ratatui::crossterm::execute;
 
-use clio_viewer::adapters::{FileLoader, JiraLoader, Loader};
+use clio_viewer::adapters::{FileLoader, Loader};
 use clio_viewer::app::App;
 use clio_viewer::keys::parse_keys;
 use clio_viewer::model::Graph;
@@ -17,16 +17,8 @@ use clio_viewer::ui;
 #[command(name = "clio-viewer", version)]
 struct Cli {
     /// Load a Clio task document (JSON, see viewer/schema).
-    #[arg(long, value_name = "PATH", conflicts_with = "jira", required_unless_present = "jira")]
-    file: Option<PathBuf>,
-
-    /// Load from Jira Cloud (needs JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN and a build with `--features jira`).
-    #[arg(long, requires = "jql")]
-    jira: bool,
-
-    /// JQL query selecting the issues to show (with --jira).
-    #[arg(long, value_name = "QUERY")]
-    jql: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    file: PathBuf,
 
     /// Render one frame of WIDTHxHEIGHT to stdout instead of running interactively.
     #[arg(long, value_name = "WxH")]
@@ -60,11 +52,7 @@ fn main() -> Result<()> {
         colorterm.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
-    let loader: Box<dyn Loader> = if cli.jira {
-        Box::new(JiraLoader::from_env(cli.jql.clone().unwrap_or_default())?)
-    } else {
-        Box::new(FileLoader::new(cli.file.clone().expect("clap enforces --file")))
-    };
+    let loader: Box<dyn Loader> = Box::new(FileLoader::new(cli.file.clone()));
     let doc = loader
         .load()
         .with_context(|| format!("loading {}", loader.describe()))?;

@@ -4,11 +4,11 @@
     Install, run and test the Clio viewers (PowerShell 7; Windows, also Linux/macOS).
 
 .DESCRIPTION
-    scripts/viewer.ps1 install [rust|python|all] [--jira]
+    scripts/viewer.ps1 install [rust|python|all]
     scripts/viewer.ps1 run rust|python [viewer args...]
     scripts/viewer.ps1 test [rust|python|all]
 
-    `run` installs first if needed and, without --file or --jira, opens the
+    `run` installs first if needed and, without --file, opens the
     sample plan. Relative paths in viewer arguments are resolved from the directory
     you run the script in. Set CLIO_PYTHON to choose a Python interpreter.
 
@@ -23,12 +23,7 @@
 $Command = if ($args.Count -ge 1) { [string] $args[0] } else { 'help' }
 $Viewer = if ($args.Count -ge 2) { [string] $args[1] } else { $null }
 $rest = if ($args.Count -ge 3) { @($args[2..($args.Count - 1)] | ForEach-Object { [string] $_ }) } else { @() }
-$Jira = $false
-$ViewerArgs = @()
-foreach ($a in $rest) {
-    if ($Command -eq 'install' -and $a -in '--jira', '-Jira') { $Jira = $true } else { $ViewerArgs += $a }
-}
-if ($Command -eq 'install' -and $Viewer -in '--jira', '-Jira') { $Jira = $true; $Viewer = $null }
+$ViewerArgs = $rest
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -44,8 +39,6 @@ $VenvPython = Join-Path $VenvBin "python$Exe"
 $RustBin = Join-Path $RustDir 'target' 'release' "clio-viewer$Exe"
 $PyBin = Join-Path $VenvBin "clio-viewer$Exe"
 $Sample = Join-Path $ViewerDir 'fixtures' 'sample.json'
-# Remembers `install --jira`, so later rebuilds keep the same features.
-$FeaturesFile = Join-Path $RustDir 'target' 'release' '.clio-features'
 
 function Say([string] $Message) { Write-Host "==> $Message" -ForegroundColor Blue }
 
@@ -88,16 +81,11 @@ function Find-Python {
 }
 
 function Build-Rust([switch] $Quiet) {
-    $features = if ($script:Jira) { @('--features', 'jira') } else { @() }
     $extra = if ($Quiet) { @('--quiet') } else { @() }
-    if (-not $Quiet) {
-        Say ("Building the Rust viewer (release" + $(if ($script:Jira) { ', with Jira support' } else { '' }) + ")")
-    }
+    if (-not $Quiet) { Say 'Building the Rust viewer (release)' }
     Push-Location $RustDir
-    try { Invoke-Checked 'cargo build' { cargo build --release @extra @features } }
+    try { Invoke-Checked 'cargo build' { cargo build --release @extra } }
     finally { Pop-Location }
-    if ($script:Jira) { Set-Content -Path $FeaturesFile -Value 'jira' }
-    else { Remove-Item $FeaturesFile -ErrorAction SilentlyContinue }
 }
 
 function Install-Rust {
@@ -106,15 +94,14 @@ function Install-Rust {
     Say "Rust viewer: $RustBin"
 }
 
-# Before running: rebuild if the sources changed (a no-op otherwise), with the
-# features chosen at install time. Without cargo, run whatever is there.
+# Before running: rebuild if the sources changed (a no-op otherwise). Without
+# cargo, run whatever is there.
 function Update-Rust {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         if (-not (Test-Path $RustBin)) { Assert-Cargo }
         return
     }
     if (-not (Test-Path $RustBin)) { Install-Rust; return }
-    if (Test-Path $FeaturesFile) { $script:Jira = $true }
     Build-Rust -Quiet
 }
 
@@ -152,7 +139,7 @@ function Invoke-Run {
     }
     $runArgs = @($ViewerArgs | Where-Object { $_ -ne '--' })
     # No data source given: show the sample plan.
-    $hasSource = @($runArgs | Where-Object { $_ -in '--file', '--jira' -or $_ -like '--file=*' }).Count -gt 0
+    $hasSource = @($runArgs | Where-Object { $_ -eq '--file' -or $_ -like '--file=*' }).Count -gt 0
     if (-not $hasSource) { $runArgs = @('--file', $Sample) + $runArgs }
     # Box-drawing characters in captured output (e.g. --snapshot | Out-File).
     $saved = [Console]::OutputEncoding

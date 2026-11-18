@@ -13,8 +13,7 @@ same keys, and draw identical screens.
 - [6. Everyday recipes](#6-everyday-recipes)
 - [7. Organising your data](#7-organising-your-data)
 - [8. Keeping your tasks in a database](#8-keeping-your-tasks-in-a-database)
-- [9. Loading from Jira](#9-loading-from-jira)
-- [10. Troubleshooting](#10-troubleshooting)
+- [9. Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -30,9 +29,12 @@ design:
 | nets / wires | relationships between items: `blocks`, `relates_to`, … |
 | fan-in / fan-out cone trace | dependency trace: what an item waits on, and what waits on it |
 
-The viewer is read-only. It never changes your data. You edit tasks wherever
-they live (a JSON file, a database you export from, or Jira) and press `R` in
-the viewer to reload.
+The viewer is read-only and fully offline. It reads one local JSON file, never
+changes it, and never touches the network. You edit tasks wherever they live (the
+JSON file itself, or a database you export from, see
+[section 8](#8-keeping-your-tasks-in-a-database)) and press `R` in the viewer to
+reload. Data kept in another tool, such as an issue tracker, needs exporting to
+the JSON format first.
 
 ---
 
@@ -44,8 +46,8 @@ the viewer to reload.
 
 | Linux / macOS (bash) | Windows (PowerShell 7) | What it does |
 |---|---|---|
-| `scripts/viewer.sh install` | `scripts\viewer.ps1 install` | Checks prerequisites, builds the Rust viewer (release) and creates the Python virtual environment in `python/.venv`. `install rust` or `install python` does just one. `--jira` builds the Rust viewer with Jira support. |
-| `scripts/viewer.sh run rust` | `scripts\viewer.ps1 run rust` | Runs a viewer, installing it first if needed. The Rust viewer is rebuilt if its source changed (for example after a `git pull`), with the same features as at install time. With no `--file` or `--jira` it opens the sample plan. |
+| `scripts/viewer.sh install` | `scripts\viewer.ps1 install` | Checks prerequisites, builds the Rust viewer (release) and creates the Python virtual environment in `python/.venv`. `install rust` or `install python` does just one. |
+| `scripts/viewer.sh run rust` | `scripts\viewer.ps1 run rust` | Runs a viewer, installing it first if needed. The Rust viewer is rebuilt if its source changed (for example after a `git pull`) With no `--file` it opens the sample plan. |
 | `scripts/viewer.sh run python --file plan.json` | `scripts\viewer.ps1 run python --file plan.json` | Everything after the viewer name goes to the viewer. Relative paths are resolved from the directory you are in. |
 | `scripts/viewer.sh test` | `scripts\viewer.ps1 test` | Runs both test suites, including the Rust/Python parity tests. `test rust` or `test python` runs one. |
 
@@ -87,7 +89,6 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 | Option | Meaning |
 |---|---|
 | `--file PATH` | load a Clio JSON file (see [section 7](#7-organising-your-data)) |
-| `--jira --jql QUERY` | load from Jira Cloud instead (see [section 9](#9-loading-from-jira)) |
 | `--snapshot WxH` | print one screen of width W and height H as text, then exit (no interactive UI) |
 | `--keys SCRIPT` | with `--snapshot`: press these keys first, e.g. `'e-'` or `'<space>j<enter>'` |
 | `--theme NAME` | colour theme: `mocha` or `classic` (see [Colour themes](#colour-themes)) |
@@ -348,7 +349,7 @@ Type part of an item's id or title and press enter.
 
 ### Reload (`R`)
 
-`R` re-reads the file (or re-runs the Jira query). The viewer keeps your open
+`R` re-reads the file. The viewer keeps your open
 boxes, drill path, selection and filters, matching items by id. Any new
 relationship types are switched on. If the new data is invalid, the viewer
 keeps showing the old data and puts the error in the status bar.
@@ -693,46 +694,7 @@ the tables above. Write the two `SELECT`s so they return the expected columns:
 
 ---
 
-## 9. Loading from Jira
-
-Both versions can read directly from Jira Cloud:
-
-- **Python:** works out of the box.
-- **Rust:** must be built with the `jira` feature:
-  `cargo run --release --features jira -- --jira --jql '…'`.
-
-```sh
-export JIRA_URL=https://your-company.atlassian.net
-export JIRA_EMAIL=you@your-company.com
-export JIRA_API_TOKEN=…            # https://id.atlassian.com/manage-profile/security/api-tokens
-clio-viewer --jira --jql 'project = CLIO ORDER BY rank'
-```
-
-The JQL decides which issues are loaded. Issues are mapped like this:
-
-| Clio field | Taken from Jira |
-|---|---|
-| `id` | issue key (`CLIO-42`) |
-| `kind` | Issue type name: `Milestone`/`Initiative` → milestone, `Epic` → epic, names containing "sub" → subtask. Otherwise it uses the hierarchy level: 2 or more → milestone, 1 → epic, below 0 → subtask, anything else → story. |
-| `status` | `blocked` if the status name contains "block". Otherwise the status category: Done → `done`, In Progress → `in_progress`, anything else → `todo`. |
-| `parent` | the issue's parent, **if the parent is also in the results**. Otherwise the issue becomes top-level. |
-| `links` | Issue links, in their outward direction (`CLIO-1 blocks CLIO-2`). The type name is converted to snake_case (`relates to` → `relates_to`). Links to issues outside the results are dropped. |
-| `assignee`, `description` | display name, and the description as plain text |
-
-Make the JQL include the parents you want to see. For example,
-`project = CLIO` loads milestones, epics and their children together. A query
-for only stories shows them all as top-level boxes.
-
-This has been tested against recorded Jira responses only, not a live Jira
-site.
-
-`JIRA_URL` must start with `https://`, and redirects are never followed: the
-loader stops with an error rather than re-sending your credentials elsewhere.
-If your site redirects (say, to a new domain), set `JIRA_URL` to the final address.
-
----
-
-## 10. Troubleshooting
+## 9. Troubleshooting
 
 | Message | Cause and fix |
 |---|---|
