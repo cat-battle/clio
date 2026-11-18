@@ -48,12 +48,56 @@ class Zoom(Enum):
         return {Zoom.DETAIL: (26, 5), Zoom.COMPACT: (20, 3), Zoom.OVERVIEW: (8, 3)}[self]
 
     @property
+    def max_extra_rows(self) -> int:
+        """Extra text rows a collapsed box can grow by when stretched."""
+        return {Zoom.DETAIL: 4, Zoom.COMPACT: 2, Zoom.OVERVIEW: 0}[self]
+
+    @property
     def col_gap(self) -> int:
         return {Zoom.DETAIL: 8, Zoom.COMPACT: 6, Zoom.OVERVIEW: 4}[self]
 
     @property
     def pad(self) -> tuple[int, int]:
-        return {Zoom.DETAIL: (2, 1), Zoom.COMPACT: (1, 1), Zoom.OVERVIEW: (1, 0)}[self]
+        return {Zoom.DETAIL: (2, 1), Zoom.COMPACT: (1, 1), Zoom.OVERVIEW: (1, 1)}[self]
+
+
+@dataclass(frozen=True)
+class Stretch:
+    """How far the layout is stretched beyond a zoom level's base sizes so it
+    fills the terminal (chosen by auto-fit; 0 = base sizes).
+
+    Horizontally, collapsed boxes first widen one cell per level up to twice
+    their base width; further levels widen the gaps between columns.
+    Vertically, boxes first gain text rows (up to ``Zoom.max_extra_rows``);
+    further levels widen the gaps between stacked boxes. Container padding
+    never grows; space that cannot be used is left around the drawing."""
+
+    x: int = 0
+    y: int = 0
+
+
+@dataclass(frozen=True)
+class _Metrics:
+    box_w: int
+    box_h: int
+    col_gap: int
+    row_gap: int
+    pad_x: int
+    pad_y: int
+
+    @classmethod
+    def new(cls, zoom: Zoom, st: Stretch) -> _Metrics:
+        bw, bh = zoom.collapsed_size
+        px, py = zoom.pad
+        cap_h = zoom.max_extra_rows
+        return cls(
+            box_w=bw + min(max(st.x, 0), bw),
+            box_h=bh + min(max(st.y, 0), cap_h),
+            col_gap=zoom.col_gap + max(st.x - bw, 0),
+            row_gap=ROW_GAP + max(st.y - cap_h, 0),
+            pad_x=px,
+            pad_y=py,
+        )
 
 
 ROW_GAP = 1
@@ -66,6 +110,7 @@ CROSS_CONTAINER = 6  # per cell of wire through an unrelated container
 OVERLAP = 4  # per cell shared with an already-routed wire
 BEND = 2
 DETOUR = 6  # extra cost of a 5-segment detour over a 3-segment route
+HUG = 4  # extra cost of a detour leg hugging its box (no gap before turning)
 
 
 def tdiv(a: int, b: int) -> int:
@@ -100,6 +145,10 @@ class Bounds:
 
     def strictly_contains(self, o: Bounds) -> bool:
         return o.x > self.x and o.y > self.y and o.right < self.right and o.bottom < self.bottom
+
+    def interior(self) -> tuple[int, int, int, int]:
+        """Inclusive (x0, y0, x1, y1) of the cells inside the border."""
+        return self.x + 1, self.y + 1, self.right - 2, self.bottom - 2
 
     def contains_point(self, x: int, y: int) -> bool:
         return self.x <= x < self.right and self.y <= y < self.bottom
@@ -149,14 +198,31 @@ def header_text(graph: Graph, n: NodeId, zoom: Zoom) -> str:
     return s[:MAX_HEADER_CHARS]
 
 
+def measure(
+    graph: Graph,
+    root: NodeId | None,
+    expanded: Collection[NodeId],
+    zoom: Zoom,
+    enabled: Collection[str],
+    stretch: Stretch = Stretch(),
+) -> tuple[int, int]:
+    """Size (width, height) that :func:`compute` would give the boxes,
+    without routing edges. Cheap; used to search for the stretch that fills
+    the terminal."""
+    ctx = _Ctx(graph, expanded, zoom, _Metrics.new(zoom, stretch), _sibling_edges(graph, enabled))
+    w, h, _ = ctx.arrange(graph.top_children(root), root)
+    return w + 2 * MARGIN, h + 2 * MARGIN
+
+
 def compute(
     graph: Graph,
     root: NodeId | None,
     expanded: Collection[NodeId],
     zoom: Zoom,
     enabled: Collection[str],
+    stretch: Stretch = Stretch(),
 ) -> Layout:
-    ctx = _Ctx(graph, expanded, zoom, _sibling_edges(graph, enabled))
+    ctx = _Ctx(graph, expanded, zoom, _Metrics.new(zoom, stretch), _sibling_edges(graph, enabled))
     _, _, placed = ctx.arrange(graph.top_children(root), root)
     boxes: list[PlacedBox] = []
     for sub, x, y in placed:
@@ -185,19 +251,20 @@ class _Sub:
 
 
 class _Ctx:
-    def __init__(self, graph: Graph, expanded: Collection[NodeId], zoom: Zoom, sib: dict) -> None:
+    def __init__(self, graph: Graph, expanded: Collection[NodeId], zoom: Zoom, m: _Metrics, sib: dict) -> None:
         self.graph = graph
         self.expanded = expanded
         self.zoom = zoom
+        self.m = m
         self.sib = sib
 
     def sub(self, n: NodeId) -> _Sub:
         kids = self.graph.children(n)
-        min_w, min_h = self.zoom.collapsed_size
+        min_w, min_h = self.m.box_w, self.m.box_h
         if n not in self.expanded or not kids:
             return _Sub(n, min_w, min_h, False, [])
         cw, ch, placed = self.arrange(kids, n)
-        px, py = self.zoom.pad
+        px, py = self.m.pad_x, self.m.pad_y
         header_w = len(header_text(self.graph, n, self.zoom)) + 9
         return _Sub(
             n,
@@ -217,9 +284,9 @@ class _Ctx:
         cols: list[list[int]] = [[] for _ in range(max(layers) + 1)]
         for i, l in enumerate(layers):
             cols[l].append(i)
-        col_h = [sum(subs[i].h for i in c) + ROW_GAP * (len(c) - 1) for c in cols]
+        col_h = [sum(subs[i].h for i in c) + self.m.row_gap * (len(c) - 1) for c in cols]
         total_h = max(col_h)
-        gap = self.zoom.col_gap
+        gap = self.m.col_gap
         offsets = [(0, 0)] * len(nodes)
         x = 0
         for ci, col in enumerate(cols):
@@ -227,7 +294,7 @@ class _Ctx:
             y = (total_h - col_h[ci]) // 2
             for i in col:
                 offsets[i] = (x, y)
-                y += subs[i].h + ROW_GAP
+                y += subs[i].h + self.m.row_gap
             x += cw + gap
         return x - gap, total_h, [(s, ox, oy) for s, (ox, oy) in zip(subs, offsets)]
 
@@ -348,14 +415,27 @@ def _route_edges(
         lane = lanes[s[0]]
         li = lane.index(a)
         preferred = s[0] + tdiv((e[0] - s[0]) * (li + 1), len(lane) + 1)
+        c = _common_container(g, a, b)
+        region = boxes[by_node[c]].bounds.interior() if c is not None and c in by_node else None
+        # The endpoints' own containers are not obstacles.
         excluded = [
             (o.bounds, CROSS_CONTAINER if o.expanded else CROSS_BOX)
             for o in boxes
             if g.is_ancestor(o.node, a) or g.is_ancestor(o.node, b)
         ]
-        points = router.route(s, e, preferred, excluded)
+        points = router.route(s, e, preferred, excluded, region)
         edges.append(Edge(a, b, kind, count, _simplify(points), (ab.right - 1, s[1]), (bb.x, e[1])))
     return edges, hidden
+
+
+def _common_container(g: Graph, a: NodeId, b: NodeId) -> NodeId | None:
+    """Lowest common ancestor of ``a`` and ``b`` (None when they only share
+    the forest root). A wire between them must stay inside this item's box."""
+    pa, pb = g.path_from_root(a), g.path_from_root(b)
+    common = 0
+    while common < len(pa) and common < len(pb) and pa[common] == pb[common]:
+        common += 1
+    return pa[common - 1] if common else None
 
 
 def _assign_ports(b: Bounds, lst: list[int], ys: list[int]) -> None:
@@ -438,22 +518,48 @@ class _Router:
         segs = sum(self.seg_cost(pts[i], pts[i + 1], excluded) for i in range(len(pts) - 1))
         return segs + BEND * (len(pts) - 2)
 
-    def route(self, s: Point, e: Point, preferred_mx: int, excluded: list[tuple[Bounds, int]]) -> list[Point]:
+    def route(
+        self,
+        s: Point,
+        e: Point,
+        preferred_mx: int,
+        excluded: list[tuple[Bounds, int]],
+        region: tuple[int, int, int, int] | None = None,
+    ) -> list[Point]:
+        """Candidates whose length alone (plus fixed penalties) cannot beat
+        the best route so far are skipped; every per-cell penalty is
+        non-negative, so this never changes the result."""
         best_cost: int | None = None
         best: list[Point] = [s, e]
         if e[0] >= s[0]:
+            length = (e[0] - s[0]) + abs(s[1] - e[1])
             for mx in range(s[0], e[0] + 1):
+                tie = abs(mx - preferred_mx)
+                if best_cost is not None and (length + 2 * BEND) * 8 + tie >= best_cost:
+                    continue
                 pts = [s, (mx, s[1]), (mx, e[1]), e]
                 # x8 so the preferred-lane tie-breaker never outweighs a real cost
-                cost = self.path_cost(pts, excluded) * 8 + abs(mx - preferred_mx)
+                cost = self.path_cost(pts, excluded) * 8 + tie
                 if best_cost is None or cost < best_cost:
                     best_cost, best = cost, pts
-        for dx1 in (1, 2, 3):
-            for dx2 in (1, 2, 3):
+        # Inside a container, every candidate stays within its interior
+        # (3-segment routes do automatically: s and e are inside it).
+        if region is None:
+            rx0, ry0, rx1, ry1 = None, self.min_y, None, self.max_y
+        else:
+            rx0, ry0, rx1, ry1 = region
+        for dx1 in (0, 1, 2, 3):
+            for dx2 in (0, 1, 2, 3):
                 x1, x2 = s[0] + dx1, e[0] - dx2
-                for yf in range(self.min_y, self.max_y + 1):
+                if rx0 is not None and not (rx0 <= x1 <= rx1 and rx0 <= x2 <= rx1):
+                    continue
+                fixed = DETOUR + 4 * BEND + HUG * ((dx1 == 0) + (dx2 == 0))
+                for yf in range(max(ry0, self.min_y), min(ry1, self.max_y) + 1):
+                    length = dx1 + abs(yf - s[1]) + abs(x2 - x1) + abs(e[1] - yf) + dx2
+                    if best_cost is not None and (length + fixed) * 8 >= best_cost:
+                        continue
                     pts = [s, (x1, s[1]), (x1, yf), (x2, yf), (x2, e[1]), e]
-                    cost = (self.path_cost(pts, excluded) + DETOUR) * 8
+                    cost = (self.path_cost(pts, excluded) + fixed - 4 * BEND) * 8
                     if best_cost is None or cost < best_cost:
                         best_cost, best = cost, pts
         pts = _simplify(best)

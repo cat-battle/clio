@@ -30,7 +30,7 @@ SCRIPTS = [
     # auto-fit and closing with x
     "<space>l<space>", "<space>l<space>jx", "exxx", "e-z", "<space>l<enter>x", "e+", "<space>l<space>xxxx",
 ]
-SIZES = [(110, 30), (200, 45), (61, 17)]
+SIZES = [(110, 30), (200, 45), (61, 17), (250, 70)]
 
 
 @pytest.mark.parametrize("size", SIZES, ids=lambda s: f"{s[0]}x{s[1]}")
@@ -38,7 +38,7 @@ SIZES = [(110, 30), (200, 45), (61, 17)]
 def test_frames_match_rust(script, size):
     w, h = size
     rust = subprocess.run(
-        [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", "--keys", script, "--styles"],
+        [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", f"--keys={script}", "--styles"],
         check=True, capture_output=True, text=True,
     ).stdout
     rust_text, rust_styles = rust.split("--- styles ---\n")

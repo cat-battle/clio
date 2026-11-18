@@ -138,3 +138,15 @@ fn quit_key() {
     screen(&mut a, "q");
     assert!(a.should_quit);
 }
+
+#[test]
+fn wrap_matches_the_python_port() {
+    use clio_viewer::render::wrap;
+    assert_eq!(wrap("Login page", 20, 1), ["Login page"]);
+    assert_eq!(wrap("General availability: billing and production", 20, 2), ["General", "availability: billi…"]);
+    assert_eq!(wrap("one two three four five", 9, 2), ["one two", "three fo…"]);
+    assert_eq!(wrap("one two three", 9, 5), ["one two", "three"]);
+    assert_eq!(wrap("abcdefghijkl xy", 5, 4), ["abcde", "fghij", "kl xy"]);
+    assert!(wrap("anything", 0, 3).is_empty() && wrap("anything", 5, 0).is_empty());
+    assert_eq!(wrap("a  b\n c", 10, 1), ["a b c"]);
+}

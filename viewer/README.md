@@ -12,9 +12,12 @@ that behaves like an RTL/schematic viewer:
   collapsed box is drawn to that box, and parallel links merge into one wire
   labelled `×N`.
 - Siblings are laid out in **layered columns** so dependencies flow left → right;
-  wires are routed orthogonally around unrelated boxes.
+  wires are routed orthogonally around unrelated boxes and **never leave the box
+  that contains both of their ends**.
 - **Zoom** switches between detail / compact / overview box sizes. **Auto-fit**
-  (on by default) picks the most detailed size at which the whole view fits.
+  (on by default) picks the most detailed size at which the whole view fits, then
+  **stretches the layout to fill the terminal** (wider boxes, wrapped titles,
+  description previews, wider spacing) and refits on resize.
 - **Mouse:** click to select, click `[+N]` / an open box's title bar to open /
   close, wheel to pan.
 - **Dependency tracing** (`t`) lights up everything the selected box depends on

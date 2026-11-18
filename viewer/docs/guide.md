@@ -117,11 +117,18 @@ at the right end. Its children are drawn inside it.
 
 What a closed box shows depends on the zoom level:
 
-| Zoom | Box size | Shows |
+| Zoom | Base box size | Shows |
 |---|---|---|
 | detail | 26×5 | `id · kind`, title, status, `@assignee` |
 | compact | 20×3 | `id title` |
 | overview | 8×3 | `id` |
+
+With auto-fit on, boxes grow beyond their base size to fill the terminal
+(see [Auto-fit zoom](#auto-fit-zoom)):
+
+- **Wider** boxes, up to twice the base width, show more of the title.
+- **Taller** boxes wrap the title over several lines. At detail zoom they also
+  show the start of the description (in grey) below it.
 
 ### Wires
 
@@ -130,8 +137,13 @@ What a closed box shows depends on the zoom level:
   arrowhead `▶`.
 - Each relationship type has its own colour and line style. The status bar
   shows which colour belongs to which type.
-- Wires are routed around closed boxes. They may pass through the inside of an
-  open container that they are not connected to.
+- **Wires stay inside their box.** A wire between two items never leaves the
+  innermost open box that contains both of them. For example, a link between
+  two stories in epic E1 stays inside E1, and a link from a story in E1 to one
+  in E2 stays inside their milestone. Only links whose ends have no common box
+  (different milestones) run across the top level.
+- Wires are routed around closed boxes. They may cross an open container they
+  are not connected to, when that is the only way through.
 - **Lifting:** when an end of a link is hidden inside a closed box, the wire is
   drawn to that box instead. Opening the box shows exactly which child the link
   belongs to.
@@ -211,9 +223,22 @@ detailed zoom level at which the whole view fits on screen**:
   top-left, scrolls only as far as needed to keep the selection visible, and
   you pan the rest.
 
+Auto-fit then **stretches the layout to use the whole terminal**, separately
+for each direction in which it fits:
+
+- **Across:** boxes widen first (up to twice their width), then the gaps
+  between columns grow.
+- **Down:** boxes gain text rows first, then the gaps between stacked boxes
+  grow.
+- Space that can't be used is split evenly on both sides, so the drawing sits
+  in the middle of the window.
+
+A bigger terminal therefore shows bigger boxes with more text. Resizing the
+window refits immediately.
+
 The status bar shows `zoom:compact (auto)` while auto-fit is in charge.
 Pressing `+` or `-` means you want a particular size, so it turns auto-fit off
-until you press `z`.
+and goes back to that zoom level's base box sizes until you press `z`.
 
 ### Closing boxes
 
@@ -424,8 +449,10 @@ it if any of these are true:
 - **Order matters a little.** Top-level items and siblings keep the order they
   have in the file within each layout column. Put items in the order you want
   to read them.
-- Keep titles short. About 24 characters fit in a box at detail zoom, and
-  longer titles are cut off with `…`. Put the rest in `description`.
+- Keep titles short. About 24 characters fit in a box at detail zoom at its
+  base size (more on a big terminal, where boxes grow and titles wrap), and
+  longer titles are cut off with `…`. Put the rest in `description`. The
+  first words of the description appear in boxes that have room.
 
 **Links**
 

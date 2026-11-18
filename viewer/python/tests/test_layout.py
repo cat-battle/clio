@@ -1,6 +1,7 @@
 import pytest
 
-from clio_viewer.layout import Layout, Zoom, compute
+from clio_viewer.layout import Layout, Stretch, Zoom, compute, measure
+from clio_viewer.render import wrap
 
 
 def all_expanded(g):
@@ -113,3 +114,85 @@ def test_cycles_do_not_break_layering(graph):
     assert _layer_assignment(3, [(0, 1), (1, 2)]) == [0, 1, 2]
     assert _layer_assignment(3, [(2, 1), (1, 0)]) == [2, 1, 0]
     assert _layer_assignment(2, [(0, 1), (1, 0)]) == [0, 1]
+
+
+# ------------------------------------------------- containment and stretch
+
+STRETCHES = [Stretch(0, 0), Stretch(5, 2), Stretch(30, 6), Stretch(80, 20)]
+
+
+def lca(g, a, b):
+    pa, pb = g.path_from_root(a), g.path_from_root(b)
+    n = 0
+    while n < min(len(pa), len(pb)) and pa[n] == pb[n]:
+        n += 1
+    return pa[n - 1] if n else None
+
+
+def check_containment(g, l: Layout):
+    """Every cell of every wire lies strictly inside the box containing both ends."""
+    for e in l.edges:
+        c = lca(g, e.source, e.target)
+        box = l.box_of(c) if c is not None else None
+        if box is None:
+            continue
+        x0, y0, x1, y1 = box.bounds.interior()
+        for (px, py), (qx, qy) in zip(e.points, e.points[1:]):
+            for x in range(min(px, qx), max(px, qx) + 1):
+                for y in range(min(py, qy), max(py, qy) + 1):
+                    assert x0 <= x <= x1 and y0 <= y <= y1, (
+                        f"{e.type} edge {g.item(e.source).id}->{g.item(e.target).id} "
+                        f"leaves {g.item(c).id} at {(x, y)}"
+                    )
+
+
+@pytest.mark.parametrize("zoom", list(Zoom))
+@pytest.mark.parametrize("st", STRETCHES, ids=lambda s: f"{s.x}x{s.y}")
+def test_routes_stay_inside_their_common_container(graph, zoom, st):
+    ids = lambda *v: {graph.find(i) for i in v}
+    enabled = set(graph.link_types)
+    checked = 0
+    for expanded in (ids("M1"), ids("M1", "E1", "E2"), ids("M1", "M2", "E2", "E3", "S4"), all_expanded(graph)):
+        for root in (None, graph.find("M1")):
+            l = compute(graph, root, expanded, zoom, enabled, st)
+            check_geometry(graph, l)
+            check_containment(graph, l)
+            checked += len(l.edges)
+    assert checked > 40
+
+
+def test_stretch_widens_boxes_first_then_spacing(graph):
+    enabled = set(graph.link_types)
+    m1 = graph.find("M1")
+
+    def size(x, y):
+        l = compute(graph, None, set(), Zoom.DETAIL, enabled, Stretch(x, y))
+        b = l.box_of(m1).bounds
+        return b.w, b.h, l.width, l.height
+
+    assert size(0, 0)[0] == 26
+    assert size(10, 0)[0] == 36
+    assert size(26, 0)[0] == 52, "boxes stop at twice their width"
+    assert size(60, 0)[0] == 52 and size(60, 0)[2] > size(26, 0)[2], "then the gaps grow"
+    assert size(0, 3)[1] == 8
+    assert size(0, 9)[1] == 9, "detail boxes gain at most 4 rows"
+
+
+@pytest.mark.parametrize("zoom", [Zoom.DETAIL, Zoom.OVERVIEW])
+@pytest.mark.parametrize("st", STRETCHES, ids=lambda s: f"{s.x}x{s.y}")
+def test_measure_matches_compute_without_edges(graph, zoom, st):
+    all_ = all_expanded(graph)
+    l = compute(graph, None, all_, zoom, set(), st)
+    assert measure(graph, None, all_, zoom, set(), st) == (l.width, l.height)
+
+
+def test_wrap():
+    assert wrap("Login page", 20, 1) == ["Login page"]
+    assert wrap("General availability: billing and production", 20, 2) == [
+        "General", "availability: billi…",
+    ]
+    assert wrap("one two three four five", 9, 2) == ["one two", "three fo…"]
+    assert wrap("one two three", 9, 5) == ["one two", "three"]
+    assert wrap("abcdefghijkl xy", 5, 4) == ["abcde", "fghij", "kl xy"]
+    assert wrap("anything", 0, 3) == [] and wrap("anything", 5, 0) == []
+    assert wrap("a  b\n c", 10, 1) == ["a b c"]

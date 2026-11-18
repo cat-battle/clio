@@ -84,6 +84,45 @@ pub fn truncate(s: &str, max: usize) -> String {
     out
 }
 
+/// Greedy word wrap of `text` into at most `max_lines` lines of `width`
+/// characters. Words longer than a line are split; whatever does not fit is
+/// put on the last line and truncated with `…`. With `max_lines == 1` this is
+/// [`truncate`] of the whitespace-normalised text.
+pub fn wrap(text: &str, width: usize, max_lines: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    if width == 0 || max_lines == 0 {
+        return out;
+    }
+    let mut words: std::collections::VecDeque<String> = text.split_whitespace().map(str::to_string).collect();
+    while let Some(first) = words.pop_front() {
+        if out.len() + 1 == max_lines {
+            let rest: Vec<String> = std::iter::once(first).chain(words.drain(..)).collect();
+            out.push(truncate(&rest.join(" "), width));
+            break;
+        }
+        let n = first.chars().count();
+        if n > width {
+            out.push(first.chars().take(width).collect());
+            words.push_front(first.chars().skip(width).collect());
+            continue;
+        }
+        let mut line = first;
+        let mut len = n;
+        while let Some(next) = words.front() {
+            let m = next.chars().count();
+            if len + 1 + m > width {
+                break;
+            }
+            line.push(' ');
+            line.push_str(next);
+            len += 1 + m;
+            words.pop_front();
+        }
+        out.push(line);
+    }
+    out
+}
+
 pub struct Canvas<'a> {
     pub graph: &'a Graph,
     pub layout: &'a Layout,
@@ -224,26 +263,40 @@ impl Canvas<'_> {
         let kids = self.graph.children(b.node).len();
         let dim = Style::default().fg(DIM);
         let plain = paint(Style::default());
+        let rows = r.h - 2; // text rows inside the border
+        let w = inner.max(0) as usize;
         match self.zoom {
             Zoom::Detail => {
+                // id · kind / title (wrapped) / description (if room) / status
                 let id = truncate(&item.id, inner as usize - 1);
                 pen.text(x0 + 1, y0 + 1, &id, inner, bold);
                 let kind = format!(" · {}", item.kind.label());
                 let used = id.chars().count() as i32;
                 pen.text(x0 + 1 + used, y0 + 1, &kind, inner - used, dim);
-                pen.text(x0 + 1, y0 + 2, &truncate(&item.title, inner as usize), inner, plain);
+                let middle = (rows - 2).max(0) as usize;
+                let mut lines = wrap(&item.title, w, middle);
+                let title_lines = lines.len();
+                if let Some(d) = &item.description {
+                    lines.extend(wrap(d, w, middle - title_lines));
+                }
+                for (i, line) in lines.iter().enumerate() {
+                    let style = if i < title_lines { plain } else { dim };
+                    pen.text(x0 + 1, y0 + 2 + i as i32, line, inner, style);
+                }
                 let st = format!("{} {}", item.status.glyph(), item.status.label());
                 let st_style = paint(Style::default().fg(status_color(item.status)));
-                pen.text(x0 + 1, y0 + 3, &st, inner, st_style);
+                pen.text(x0 + 1, y1 - 1, &st, inner, st_style);
                 if let Some(a) = &item.assignee {
                     let used = st.chars().count() as i32 + 1;
                     let who = truncate(&format!("@{a}"), (inner - used).max(0) as usize);
-                    pen.text(x1 - who.chars().count() as i32, y0 + 3, &who, inner - used, dim);
+                    pen.text(x1 - who.chars().count() as i32, y1 - 1, &who, inner - used, dim);
                 }
             }
             Zoom::Compact => {
-                let s = truncate(&format!("{} {}", item.id, item.title), inner as usize);
-                pen.text(x0 + 1, y0 + 1, &s, inner, title_style);
+                let text = format!("{} {}", item.id, item.title);
+                for (i, line) in wrap(&text, w, rows.max(0) as usize).iter().enumerate() {
+                    pen.text(x0 + 1, y0 + 1 + i as i32, line, inner, title_style);
+                }
             }
             Zoom::Overview => {
                 pen.text(x0 + 1, y0 + 1, &truncate(&item.id, inner as usize), inner, title_style);

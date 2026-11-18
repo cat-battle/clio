@@ -55,6 +55,16 @@ impl Zoom {
         }
     }
 
+    /// Extra text rows a collapsed box can grow by when stretched to fill
+    /// the terminal (wrapped title / description lines).
+    fn max_extra_rows(self) -> i32 {
+        match self {
+            Zoom::Detail => 4,
+            Zoom::Compact => 2,
+            Zoom::Overview => 0,
+        }
+    }
+
     fn col_gap(self) -> i32 {
         match self {
             Zoom::Detail => 8,
@@ -68,7 +78,50 @@ impl Zoom {
         match self {
             Zoom::Detail => (2, 1),
             Zoom::Compact => (1, 1),
-            Zoom::Overview => (1, 0),
+            Zoom::Overview => (1, 1),
+        }
+    }
+}
+
+/// How far the layout is stretched beyond a zoom level's base sizes so it
+/// fills the terminal (chosen by auto-fit; 0 = base sizes).
+///
+/// Horizontally, collapsed boxes first widen one cell per level up to twice
+/// their base width; further levels widen the gaps between columns.
+/// Vertically, boxes first gain text rows (up to [`Zoom::max_extra_rows`]);
+/// further levels widen the gaps between stacked boxes. Container padding
+/// never grows; space that cannot be used is left around the drawing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Stretch {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Concrete sizes for one (zoom, stretch) pair.
+#[derive(Debug, Clone, Copy)]
+struct Metrics {
+    box_w: i32,
+    box_h: i32,
+    col_gap: i32,
+    row_gap: i32,
+    pad_x: i32,
+    pad_y: i32,
+}
+
+impl Metrics {
+    fn new(zoom: Zoom, st: Stretch) -> Self {
+        let (bw, bh) = zoom.collapsed_size();
+        let (px, py) = zoom.pad();
+        let extra_gap = (st.x - bw).max(0);
+        let cap_h = zoom.max_extra_rows();
+        let extra_row = (st.y - cap_h).max(0);
+        Self {
+            box_w: bw + st.x.clamp(0, bw),
+            box_h: bh + st.y.clamp(0, cap_h),
+            col_gap: zoom.col_gap() + extra_gap,
+            row_gap: ROW_GAP + extra_row,
+            pad_x: px,
+            pad_y: py,
         }
     }
 }
@@ -107,6 +160,11 @@ impl Bounds {
     /// `o` lies inside this box's border (not touching it).
     pub fn strictly_contains(&self, o: &Bounds) -> bool {
         o.x > self.x && o.y > self.y && o.right() < self.right() && o.bottom() < self.bottom()
+    }
+
+    /// Inclusive (x0, y0, x1, y1) of the cells inside the border.
+    pub fn interior(&self) -> (i32, i32, i32, i32) {
+        (self.x + 1, self.y + 1, self.right() - 2, self.bottom() - 2)
     }
 
     pub fn contains_point(&self, x: i32, y: i32) -> bool {
@@ -168,6 +226,7 @@ pub struct LayoutParams<'a> {
     pub expanded: &'a HashSet<NodeId>,
     pub zoom: Zoom,
     pub enabled: &'a HashSet<String>,
+    pub stretch: Stretch,
 }
 
 /// Text shown in an expanded container's top border.
@@ -180,13 +239,17 @@ pub fn header_text(graph: &Graph, n: NodeId, zoom: Zoom) -> String {
     s.chars().take(MAX_HEADER_CHARS).collect()
 }
 
+/// Size (width, height) that [`compute`] would give the boxes, without
+/// routing edges. Cheap; used to search for the stretch that fills the
+/// terminal.
+pub fn measure(graph: &Graph, params: &LayoutParams) -> (i32, i32) {
+    let ctx = Ctx::new(graph, params);
+    let (w, h, _) = ctx.arrange(graph.top_children(params.root), params.root);
+    (w + 2 * MARGIN, h + 2 * MARGIN)
+}
+
 pub fn compute(graph: &Graph, params: &LayoutParams) -> Layout {
-    let ctx = Ctx {
-        graph,
-        expanded: params.expanded,
-        zoom: params.zoom,
-        sib: sibling_edges(graph, params.enabled),
-    };
+    let ctx = Ctx::new(graph, params);
     let (_, _, placed) = ctx.arrange(graph.top_children(params.root), params.root);
 
     let mut boxes = Vec::new();
@@ -232,14 +295,25 @@ struct Ctx<'a> {
     graph: &'a Graph,
     expanded: &'a HashSet<NodeId>,
     zoom: Zoom,
+    m: Metrics,
     /// Per container (None = forest top level): sibling-level edges.
     sib: HashMap<Option<NodeId>, BTreeSet<(NodeId, NodeId)>>,
 }
 
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    fn new(graph: &'a Graph, params: &LayoutParams<'a>) -> Self {
+        Ctx {
+            graph,
+            expanded: params.expanded,
+            zoom: params.zoom,
+            m: Metrics::new(params.zoom, params.stretch),
+            sib: sibling_edges(graph, params.enabled),
+        }
+    }
+
     fn sub(&self, n: NodeId) -> Sub {
         let kids = self.graph.children(n);
-        let (min_w, min_h) = self.zoom.collapsed_size();
+        let (min_w, min_h) = (self.m.box_w, self.m.box_h);
         if !self.expanded.contains(&n) || kids.is_empty() {
             return Sub {
                 node: n,
@@ -250,7 +324,7 @@ impl Ctx<'_> {
             };
         }
         let (cw, ch, placed) = self.arrange(kids, Some(n));
-        let (px, py) = self.zoom.pad();
+        let (px, py) = (self.m.pad_x, self.m.pad_y);
         // border + "─ " + header + " " + room for the "[-]" marker
         let header_w = header_text(self.graph, n, self.zoom).chars().count() as i32 + 9;
         Sub {
@@ -289,10 +363,10 @@ impl Ctx<'_> {
 
         let col_h: Vec<i32> = cols
             .iter()
-            .map(|c| c.iter().map(|&i| subs[i].h).sum::<i32>() + ROW_GAP * (c.len() as i32 - 1))
+            .map(|c| c.iter().map(|&i| subs[i].h).sum::<i32>() + self.m.row_gap * (c.len() as i32 - 1))
             .collect();
         let total_h = col_h.iter().copied().max().unwrap_or(0);
-        let gap = self.zoom.col_gap();
+        let gap = self.m.col_gap;
         let mut offsets = vec![(0, 0); nodes.len()];
         let mut x = 0;
         for (ci, col) in cols.iter().enumerate() {
@@ -300,7 +374,7 @@ impl Ctx<'_> {
             let mut y = (total_h - col_h[ci]) / 2;
             for &i in col {
                 offsets[i] = (x, y);
-                y += subs[i].h + ROW_GAP;
+                y += subs[i].h + self.m.row_gap;
             }
             x += cw + gap;
         }
@@ -464,12 +538,16 @@ fn route_edges(
             let lane = &lanes[&s.0];
             let li = lane.iter().position(|&n| n == a).unwrap_or(0) as i32;
             let preferred_mx = s.0 + (e.0 - s.0) * (li + 1) / (lane.len() as i32 + 1);
-            let obstacles: Vec<(Bounds, i64)> = boxes
+            let region = common_container(g, a, b)
+                .and_then(|c| by_node.get(&c))
+                .map(|&i| boxes[i].bounds.interior());
+            // The endpoints' own containers are not obstacles.
+            let excluded: Vec<(Bounds, i64)> = boxes
                 .iter()
-                .filter(|o| !g.is_ancestor(o.node, a) && !g.is_ancestor(o.node, b))
-                .map(|o| (o.bounds, if o.expanded { CROSS_CONTAINER } else { CROSS_BOX }))
+                .filter(|o| g.is_ancestor(o.node, a) || g.is_ancestor(o.node, b))
+                .map(|o| (o.bounds, box_weight(o)))
                 .collect();
-            let points = router.route(s, e, preferred_mx, &obstacles);
+            let points = router.route(s, e, preferred_mx, &excluded, region);
             Edge {
                 from: a,
                 to: b,
@@ -492,50 +570,136 @@ const OVERLAP: i64 = 4;
 const BEND: i64 = 2;
 /// Extra cost of a 5-segment detour over a 3-segment route.
 const DETOUR: i64 = 6;
+/// Extra cost of a detour leg hugging its box (no gap before turning).
+const HUG: i64 = 4;
+
+/// Lowest common ancestor of `a` and `b` (None when they only share the
+/// forest root). A wire between them must stay inside this item's box.
+fn common_container(g: &Graph, a: NodeId, b: NodeId) -> Option<NodeId> {
+    let pa = g.path_from_root(a);
+    let pb = g.path_from_root(b);
+    let common = pa.iter().zip(&pb).take_while(|(x, y)| x == y).count();
+    common.checked_sub(1).map(|i| pa[i])
+}
+
+fn box_weight(b: &PlacedBox) -> i64 {
+    if b.expanded { CROSS_CONTAINER } else { CROSS_BOX }
+}
+
+/// Cells of the inclusive rectangle (x0,y0)-(x1,y1) inside `b`.
+fn overlap(x0: i32, y0: i32, x1: i32, y1: i32, b: &Bounds) -> i64 {
+    let w = (x1 + 1).min(b.right()) - x0.max(b.x);
+    let h = (y1 + 1).min(b.bottom()) - y0.max(b.y);
+    if w > 0 && h > 0 { (w * h) as i64 } else { 0 }
+}
+
+fn prefix(v: impl Iterator<Item = i64>) -> Vec<i64> {
+    let mut out = vec![0];
+    let mut acc = 0;
+    for x in v {
+        acc += x;
+        out.push(acc);
+    }
+    out
+}
 
 /// Greedy orthogonal router: for each edge, evaluates a family of 3-segment
 /// (one vertical channel) and 5-segment (detour along a free row) routes and
 /// keeps the cheapest, accounting for boxes crossed and wires already placed.
+///
+/// Box and wire costs are kept as per-row / per-column prefix sums so each
+/// segment costs O(1); the boxes containing an edge's endpoints are
+/// subtracted analytically. Candidates whose length alone cannot beat the
+/// best route so far are skipped (this never changes the result).
 struct Router {
-    used: HashSet<(i32, i32)>,
+    boxes: Vec<(Bounds, i64)>,
     min_y: i32,
     max_y: i32,
+    gx0: i32,
+    gx1: i32,
+    base_rows: Vec<Vec<i64>>,
+    base_cols: Vec<Vec<i64>>,
+    used: HashSet<(i32, i32)>,
+    used_grid: Vec<Vec<i64>>,
+    used_rows: Vec<Vec<i64>>,
+    used_cols: Vec<Vec<i64>>,
 }
 
 impl Router {
     fn new(boxes: &[PlacedBox]) -> Self {
-        let min_y = boxes.iter().map(|b| b.bounds.y).min().unwrap_or(0);
+        let min_y = boxes.iter().map(|b| b.bounds.y).min().unwrap_or(0) - 1;
         let max_y = boxes.iter().map(|b| b.bounds.bottom()).max().unwrap_or(0);
+        let gx0 = boxes.iter().map(|b| b.bounds.x).min().unwrap_or(0) - 8;
+        let gx1 = boxes.iter().map(|b| b.bounds.right()).max().unwrap_or(0) + 8;
+        let (width, height) = ((gx1 - gx0 + 1) as usize, (max_y - min_y + 1) as usize);
+        let mut base = vec![vec![0i64; width]; height];
+        for b in boxes {
+            let w = box_weight(b);
+            let r = b.bounds;
+            for y in r.y.max(min_y)..r.bottom().min(max_y + 1) {
+                for x in r.x..r.right() {
+                    base[(y - min_y) as usize][(x - gx0) as usize] += w;
+                }
+            }
+        }
+        let base_rows = base.iter().map(|row| prefix(row.iter().copied())).collect();
+        let base_cols = (0..width).map(|x| prefix(base.iter().map(|row| row[x]))).collect();
         Self {
-            used: HashSet::new(),
-            min_y: min_y - 1,
+            boxes: boxes.iter().map(|b| (b.bounds, box_weight(b))).collect(),
+            min_y,
             max_y,
+            gx0,
+            gx1,
+            base_rows,
+            base_cols,
+            used: HashSet::new(),
+            used_grid: vec![vec![0; width]; height],
+            used_rows: vec![vec![0; width + 1]; height],
+            used_cols: vec![vec![0; height + 1]; width],
         }
     }
 
-    fn seg_cost(&self, p: (i32, i32), q: (i32, i32), obstacles: &[(Bounds, i64)]) -> i64 {
+    fn inside(&self, x: i32, y: i32) -> bool {
+        (self.gx0..=self.gx1).contains(&x) && (self.min_y..=self.max_y).contains(&y)
+    }
+
+    fn seg_cost(&self, p: (i32, i32), q: (i32, i32), excluded: &[(Bounds, i64)]) -> i64 {
         let (x0, x1) = (p.0.min(q.0), p.0.max(q.0));
         let (y0, y1) = (p.1.min(q.1), p.1.max(q.1));
         let mut cost = ((x1 - x0) + (y1 - y0)) as i64;
-        for (b, weight) in obstacles {
-            let w = (x1 + 1).min(b.right()) - x0.max(b.x);
-            let h = (y1 + 1).min(b.bottom()) - y0.max(b.y);
-            if w > 0 && h > 0 {
-                cost += (w * h) as i64 * weight;
+        if self.inside(x0, y0) && self.inside(x1, y1) {
+            if y0 == y1 {
+                let ry = (y0 - self.min_y) as usize;
+                let (a, b) = ((x0 - self.gx0) as usize, (x1 - self.gx0 + 1) as usize);
+                cost += self.base_rows[ry][b] - self.base_rows[ry][a];
+                cost += self.used_rows[ry][b] - self.used_rows[ry][a];
+            } else {
+                let cx = (x0 - self.gx0) as usize;
+                let (a, b) = ((y0 - self.min_y) as usize, (y1 - self.min_y + 1) as usize);
+                cost += self.base_cols[cx][b] - self.base_cols[cx][a];
+                cost += self.used_cols[cx][b] - self.used_cols[cx][a];
             }
-        }
-        for x in x0..=x1 {
-            for y in y0..=y1 {
-                if self.used.contains(&(x, y)) {
-                    cost += OVERLAP;
+        } else {
+            // Outside the precomputed grid: slow but exact.
+            for (b, w) in &self.boxes {
+                cost += overlap(x0, y0, x1, y1, b) * w;
+            }
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    if self.used.contains(&(x, y)) {
+                        cost += OVERLAP;
+                    }
                 }
             }
+        }
+        for (b, w) in excluded {
+            cost -= overlap(x0, y0, x1, y1, b) * w;
         }
         cost
     }
 
-    fn path_cost(&self, pts: &[(i32, i32)], obstacles: &[(Bounds, i64)]) -> i64 {
-        let segs: i64 = pts.windows(2).map(|w| self.seg_cost(w[0], w[1], obstacles)).sum();
+    fn path_cost(&self, pts: &[(i32, i32)], excluded: &[(Bounds, i64)]) -> i64 {
+        let segs: i64 = pts.windows(2).map(|w| self.seg_cost(w[0], w[1], excluded)).sum();
         segs + BEND * (pts.len() as i64 - 2)
     }
 
@@ -544,42 +708,81 @@ impl Router {
         s: (i32, i32),
         e: (i32, i32),
         preferred_mx: i32,
-        obstacles: &[(Bounds, i64)],
+        excluded: &[(Bounds, i64)],
+        region: Option<(i32, i32, i32, i32)>,
     ) -> Vec<(i32, i32)> {
         let mut best: Option<(i64, Vec<(i32, i32)>)> = None;
-        let mut consider = |cost: i64, pts: Vec<(i32, i32)>| {
-            if best.as_ref().is_none_or(|(c, _)| cost < *c) {
-                best = Some((cost, pts));
-            }
-        };
+        // Lower bound of a candidate's cost: its length plus fixed penalties
+        // (every per-cell penalty is non-negative).
+        let beaten = |best: &Option<(i64, Vec<(i32, i32)>)>, bound: i64| best.as_ref().is_some_and(|(c, _)| bound >= *c);
         if e.0 >= s.0 {
             for mx in s.0..=e.0 {
+                let len = (e.0 - s.0) + (s.1 - e.1).abs();
+                let tie = (mx - preferred_mx).abs() as i64;
+                if beaten(&best, (len as i64 + 2 * BEND) * 8 + tie) {
+                    continue;
+                }
                 let pts = vec![s, (mx, s.1), (mx, e.1), e];
                 // ×8 so the preferred-lane tie-breaker never outweighs a real cost
-                let cost = self.path_cost(&pts, obstacles) * 8 + (mx - preferred_mx).abs() as i64;
-                consider(cost, pts);
+                let cost = self.path_cost(&pts, excluded) * 8 + tie;
+                if !beaten(&best, cost) {
+                    best = Some((cost, pts));
+                }
             }
         }
-        for dx1 in 1..=3 {
-            for dx2 in 1..=3 {
+        // Inside a container, every candidate stays within its interior
+        // (3-segment routes do automatically: s and e are inside it).
+        let (rx0, ry0, rx1, ry1) = region.unwrap_or((i32::MIN, self.min_y, i32::MAX, self.max_y));
+        for dx1 in 0..=3 {
+            for dx2 in 0..=3 {
                 let (x1, x2) = (s.0 + dx1, e.0 - dx2);
-                for yf in self.min_y..=self.max_y {
+                if x1 < rx0 || x1 > rx1 || x2 < rx0 || x2 > rx1 {
+                    continue;
+                }
+                let fixed = DETOUR + 4 * BEND + HUG * (i64::from(dx1 == 0) + i64::from(dx2 == 0));
+                for yf in ry0.max(self.min_y)..=ry1.min(self.max_y) {
+                    let len = dx1 + (yf - s.1).abs() + (x2 - x1).abs() + (e.1 - yf).abs() + dx2;
+                    if beaten(&best, (len as i64 + fixed) * 8) {
+                        continue;
+                    }
                     let pts = vec![s, (x1, s.1), (x1, yf), (x2, yf), (x2, e.1), e];
-                    let cost = (self.path_cost(&pts, obstacles) + DETOUR) * 8;
-                    consider(cost, pts);
+                    let cost = (self.path_cost(&pts, excluded) + fixed - 4 * BEND) * 8;
+                    if !beaten(&best, cost) {
+                        best = Some((cost, pts));
+                    }
                 }
             }
         }
         let pts = simplify(best.map(|(_, p)| p).unwrap_or_else(|| vec![s, e]));
+        self.mark(&pts);
+        pts
+    }
+
+    fn mark(&mut self, pts: &[(i32, i32)]) {
+        let mut rows = BTreeSet::new();
+        let mut cols = BTreeSet::new();
         for w in pts.windows(2) {
             let (p, q) = (w[0], w[1]);
             for x in p.0.min(q.0)..=p.0.max(q.0) {
                 for y in p.1.min(q.1)..=p.1.max(q.1) {
-                    self.used.insert((x, y));
+                    if !self.used.insert((x, y)) {
+                        continue;
+                    }
+                    if self.inside(x, y) {
+                        let (ry, cx) = ((y - self.min_y) as usize, (x - self.gx0) as usize);
+                        self.used_grid[ry][cx] = OVERLAP;
+                        rows.insert(ry);
+                        cols.insert(cx);
+                    }
                 }
             }
         }
-        pts
+        for ry in rows {
+            self.used_rows[ry] = prefix(self.used_grid[ry].iter().copied());
+        }
+        for cx in cols {
+            self.used_cols[cx] = prefix(self.used_grid.iter().map(|row| row[cx]));
+        }
     }
 }
 

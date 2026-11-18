@@ -7,7 +7,7 @@ Popups (help, relationship filters, search prompt) are Textual screens in
 from __future__ import annotations
 
 from .adapters import Loader
-from .layout import Layout, Zoom, compute, tdiv
+from .layout import Layout, Stretch, Zoom, compute, measure, tdiv
 from .model import Graph, NodeId
 from .trace import Trace, TraceMode
 
@@ -22,6 +22,7 @@ class ViewerState:
         self.expanded: set[NodeId] = set()
         self.drill: list[NodeId] = []  # last entry = current view root
         self.zoom = Zoom.DETAIL
+        self.stretch = Stretch()  # growth beyond the zoom's base sizes (auto-fit)
         self.enabled: set[str] = set(graph.link_types)
         self.selected: NodeId | None = None
         self.camera = (0, 0)
@@ -45,13 +46,20 @@ class ViewerState:
         return self.drill[-1] if self.drill else None
 
     def relayout(self) -> None:
-        self.layout = self._layout_at(self.zoom)
+        # With auto-fit, the next frame refits (and re-stretches) anyway, so
+        # lay out at base sizes: routing a stretched layout is the slow part.
+        if self.auto_fit:
+            self.stretch = Stretch()
+        self.layout = self._layout_at(self.zoom, self.stretch)
         self._fix_selection()
         self._follow_pending = True
         self._fit_pending = True
 
-    def _layout_at(self, zoom: Zoom) -> Layout:
-        return compute(self.graph, self.root, self.expanded, zoom, self.enabled)
+    def _layout_at(self, zoom: Zoom, stretch: Stretch) -> Layout:
+        return compute(self.graph, self.root, self.expanded, zoom, self.enabled, stretch)
+
+    def _measure(self, zoom: Zoom, stretch: Stretch) -> tuple[int, int]:
+        return measure(self.graph, self.root, self.expanded, zoom, self.enabled, stretch)
 
     def _fix_selection(self) -> None:
         """Moves the selection to its nearest visible ancestor (or the first
@@ -64,18 +72,35 @@ class ViewerState:
                 fallback = self.layout.boxes[0].node
             self.selected = fallback
 
-    def _fits(self, layout: Layout) -> bool:
-        return layout.width <= self.viewport[0] and layout.height <= self.viewport[1]
-
     def _fit(self) -> None:
-        """Auto-fit: switches to the most detailed zoom level at which the
-        whole view fits the viewport (overview if nothing fits)."""
+        """Auto-fit: picks the most detailed zoom level at which the whole
+        view fits the viewport (overview if none does), then stretches the
+        layout along each axis that fits until it fills the viewport. When it
+        fits, ``set_viewport`` centres it."""
+        vw, vh = self.viewport
         old = self.zoom
-        for z in (Zoom.DETAIL, Zoom.COMPACT, Zoom.OVERVIEW):
-            layout = self.layout if z is self.zoom else self._layout_at(z)
-            if self._fits(layout) or z is Zoom.OVERVIEW:
-                self.zoom, self.layout = z, layout
+        zero = Stretch()
+        zoom = Zoom.OVERVIEW
+        for z in (Zoom.DETAIL, Zoom.COMPACT):
+            w, h = self._measure(z, zero)
+            if w <= vw and h <= vh:
+                zoom = z
                 break
+        w0, h0 = self._measure(zoom, zero)
+        sx = _max_level(vw, lambda k: self._measure(zoom, Stretch(k, 0))[0] <= vw) if w0 <= vw else 0
+        sy = _max_level(vh, lambda k: self._measure(zoom, Stretch(0, k))[1] <= vh) if h0 <= vh else 0
+        # Routed wires can occasionally reach past the boxes; back off until
+        # the real layout fits too.
+        while True:
+            st = Stretch(sx, sy)
+            layout = self.layout if (zoom, st) == (self.zoom, self.stretch) else self._layout_at(zoom, st)
+            shrink_x = layout.width > vw and sx > 0
+            shrink_y = layout.height > vh and sy > 0
+            if not shrink_x and not shrink_y:
+                break
+            sx -= shrink_x
+            sy -= shrink_y
+        self.zoom, self.stretch, self.layout = zoom, st, layout
         self._fix_selection()
         if self.zoom is not old:
             # Start from the top-left and scroll only as far as the selection needs.
@@ -97,13 +122,14 @@ class ViewerState:
         elif self._follow_pending:
             self._follow_pending = False
             self._ensure_selected_visible()
-        # With auto-fit, an axis on which the whole view fits never scrolls.
+        # With auto-fit, an axis on which the whole view fits never scrolls;
+        # the view is centred on it.
         if self.auto_fit:
             cx, cy = self.camera
             if self.layout.width <= w:
-                cx = 0
+                cx = -((w - self.layout.width) // 2)
             if self.layout.height <= h:
-                cy = 0
+                cy = -((h - self.layout.height) // 2)
             self.camera = (cx, cy)
 
     def _clamp_camera(self) -> None:
@@ -209,6 +235,10 @@ class ViewerState:
         if self.auto_fit:
             self.auto_fit = False
             self.message = "auto-fit off (z turns it back on)"
+        if self.stretch != Stretch():
+            # Picking a zoom level by hand means its base sizes.
+            self.stretch = Stretch()
+            self.relayout()
         self.set_zoom(z)
 
     def toggle_auto_fit(self) -> None:
@@ -446,3 +476,16 @@ class ViewerState:
         self.selected = graph.find(selected) if selected is not None else None
         self.relayout()
         self.message = f"reloaded {len(graph)} items"
+
+
+def _max_level(limit: int, fits) -> int:
+    """Largest ``k`` in ``0..limit`` with ``fits(k)``, assuming ``fits`` is
+    monotone (true up to some point, then false) and ``fits(0)`` holds."""
+    lo, hi = 0, max(limit, 0)
+    while lo < hi:
+        mid = lo + (hi - lo + 1) // 2
+        if fits(mid):
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo

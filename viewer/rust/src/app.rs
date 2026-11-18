@@ -7,7 +7,7 @@ use ratatui::crossterm::event::{
 };
 
 use crate::adapters::Loader;
-use crate::layout::{self, Layout, LayoutParams, Zoom};
+use crate::layout::{self, Layout, LayoutParams, Stretch, Zoom};
 use crate::model::{Graph, NodeId};
 use crate::trace::{Trace, TraceMode};
 
@@ -37,6 +37,8 @@ pub struct App {
     /// Drill-in stack; the last entry is the current view root.
     pub drill: Vec<NodeId>,
     pub zoom: Zoom,
+    /// Growth beyond the zoom level's base sizes (set by auto-fit).
+    pub stretch: Stretch,
     pub enabled: HashSet<String>,
     pub selected: Option<NodeId>,
     pub camera: (i32, i32),
@@ -64,6 +66,7 @@ impl App {
             expanded: HashSet::new(),
             drill: Vec::new(),
             zoom: Zoom::default(),
+            stretch: Stretch::default(),
             enabled,
             selected: None,
             camera: (0, 0),
@@ -93,15 +96,12 @@ impl App {
     }
 
     pub fn relayout(&mut self) {
-        self.layout = layout::compute(
-            &self.graph,
-            &LayoutParams {
-                root: self.root(),
-                expanded: &self.expanded,
-                zoom: self.zoom,
-                enabled: &self.enabled,
-            },
-        );
+        // With auto-fit, the next frame refits (and re-stretches) anyway, so
+        // lay out at base sizes: routing a stretched layout is the slow part.
+        if self.auto_fit {
+            self.stretch = Stretch::default();
+        }
+        self.layout = self.layout_at(self.zoom, self.stretch);
         self.fix_selection();
         self.follow_pending = true;
         self.fit_pending = true;
@@ -123,42 +123,71 @@ impl App {
         }
     }
 
-    fn layout_at(&self, zoom: Zoom) -> Layout {
-        layout::compute(
-            &self.graph,
-            &LayoutParams {
-                root: self.root(),
-                expanded: &self.expanded,
-                zoom,
-                enabled: &self.enabled,
-            },
-        )
+    fn params(&self, zoom: Zoom, stretch: Stretch) -> LayoutParams<'_> {
+        LayoutParams {
+            root: self.root(),
+            expanded: &self.expanded,
+            zoom,
+            enabled: &self.enabled,
+            stretch,
+        }
     }
 
-    fn fits(&self, l: &Layout) -> bool {
-        l.width <= self.viewport.0 && l.height <= self.viewport.1
+    fn layout_at(&self, zoom: Zoom, stretch: Stretch) -> Layout {
+        layout::compute(&self.graph, &self.params(zoom, stretch))
     }
 
-    /// Auto-fit: switches to the most detailed zoom level at which the whole
-    /// view fits the viewport (overview if nothing fits). When it fits, the
-    /// camera shows all of it (see `set_viewport`).
+    fn measure(&self, zoom: Zoom, stretch: Stretch) -> (i32, i32) {
+        layout::measure(&self.graph, &self.params(zoom, stretch))
+    }
+
+    /// Auto-fit: picks the most detailed zoom level at which the whole view
+    /// fits the viewport (overview if none does), then stretches the layout
+    /// along each axis that fits until it fills the viewport. When it fits,
+    /// `set_viewport` centres it.
     fn fit(&mut self) {
+        let (vw, vh) = self.viewport;
         let old = self.zoom;
-        for z in [Zoom::Detail, Zoom::Compact, Zoom::Overview] {
-            let l = if z == self.zoom {
+        let zero = Stretch::default();
+        let zoom = [Zoom::Detail, Zoom::Compact]
+            .into_iter()
+            .find(|&z| {
+                let (w, h) = self.measure(z, zero);
+                w <= vw && h <= vh
+            })
+            .unwrap_or(Zoom::Overview);
+        let (w0, h0) = self.measure(zoom, zero);
+        let mut st = Stretch {
+            x: if w0 <= vw {
+                max_level(vw, |k| self.measure(zoom, Stretch { x: k, y: 0 }).0 <= vw)
+            } else {
+                0
+            },
+            y: if h0 <= vh {
+                max_level(vh, |k| self.measure(zoom, Stretch { x: 0, y: k }).1 <= vh)
+            } else {
+                0
+            },
+        };
+        // Routed wires can occasionally reach past the boxes; back off until
+        // the real layout fits too.
+        loop {
+            let l = if (zoom, st) == (self.zoom, self.stretch) {
                 std::mem::take(&mut self.layout)
             } else {
-                self.layout_at(z)
+                self.layout_at(zoom, st)
             };
-            if self.fits(&l) || z == Zoom::Overview {
-                self.zoom = z;
+            let shrink_x = l.width > vw && st.x > 0;
+            let shrink_y = l.height > vh && st.y > 0;
+            if !shrink_x && !shrink_y {
                 self.layout = l;
                 break;
             }
-            if z == old {
-                self.layout = l; // keep it if we break out later at old zoom
-            }
+            st.x -= i32::from(shrink_x);
+            st.y -= i32::from(shrink_y);
         }
+        self.zoom = zoom;
+        self.stretch = st;
         self.fix_selection();
         if self.zoom != old {
             // Start from the top-left and scroll only as far as the
@@ -183,13 +212,15 @@ impl App {
         } else if std::mem::take(&mut self.follow_pending) {
             self.ensure_selected_visible();
         }
-        // With auto-fit, an axis on which the whole view fits never scrolls.
+        // With auto-fit, an axis on which the whole view fits never scrolls;
+        // the view is centred on it.
         if self.auto_fit {
-            if self.layout.width <= self.viewport.0 {
-                self.camera.0 = 0;
+            let (vw, vh) = self.viewport;
+            if self.layout.width <= vw {
+                self.camera.0 = -(vw - self.layout.width) / 2;
             }
-            if self.layout.height <= self.viewport.1 {
-                self.camera.1 = 0;
+            if self.layout.height <= vh {
+                self.camera.1 = -(vh - self.layout.height) / 2;
             }
         }
     }
@@ -364,6 +395,11 @@ impl App {
         if self.auto_fit {
             self.auto_fit = false;
             self.message = Some("auto-fit off (z turns it back on)".into());
+        }
+        if self.stretch != Stretch::default() {
+            // Picking a zoom level by hand means its base sizes.
+            self.stretch = Stretch::default();
+            self.relayout();
         }
         self.set_zoom(z);
     }
@@ -684,4 +720,19 @@ impl App {
         self.relayout();
         self.message = Some(format!("reloaded {} items", self.graph.len()));
     }
+}
+
+/// Largest `k` in `0..=limit` with `fits(k)`, assuming `fits` is monotone
+/// (true up to some point, then false) and `fits(0)` holds.
+fn max_level(limit: i32, fits: impl Fn(i32) -> bool) -> i32 {
+    let (mut lo, mut hi) = (0, limit.max(0));
+    while lo < hi {
+        let mid = lo + (hi - lo + 1) / 2;
+        if fits(mid) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo
 }

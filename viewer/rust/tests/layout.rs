@@ -2,7 +2,7 @@ mod common;
 
 use std::collections::HashSet;
 
-use clio_viewer::layout::{Layout, LayoutParams, Zoom, compute};
+use clio_viewer::layout::{Layout, LayoutParams, Stretch, Zoom, compute, measure};
 use clio_viewer::model::{Graph, NodeId};
 
 fn all_expanded(g: &Graph) -> HashSet<NodeId> {
@@ -14,16 +14,75 @@ fn all_types(g: &Graph) -> HashSet<String> {
 }
 
 fn run(g: &Graph, root: Option<NodeId>, expanded: &HashSet<NodeId>, zoom: Zoom, enabled: &HashSet<String>) -> Layout {
-    compute(
-        g,
-        &LayoutParams {
-            root,
-            expanded,
-            zoom,
-            enabled,
-        },
-    )
+    run_st(g, root, expanded, zoom, enabled, Stretch::default())
 }
+
+fn params<'a>(
+    root: Option<NodeId>,
+    expanded: &'a HashSet<NodeId>,
+    zoom: Zoom,
+    enabled: &'a HashSet<String>,
+    stretch: Stretch,
+) -> LayoutParams<'a> {
+    LayoutParams {
+        root,
+        expanded,
+        zoom,
+        enabled,
+        stretch,
+    }
+}
+
+fn run_st(
+    g: &Graph,
+    root: Option<NodeId>,
+    expanded: &HashSet<NodeId>,
+    zoom: Zoom,
+    enabled: &HashSet<String>,
+    stretch: Stretch,
+) -> Layout {
+    compute(g, &params(root, expanded, zoom, enabled, stretch))
+}
+
+/// Lowest common ancestor of two items, if any.
+fn lca(g: &Graph, a: NodeId, b: NodeId) -> Option<NodeId> {
+    let (pa, pb) = (g.path_from_root(a), g.path_from_root(b));
+    let n = pa.iter().zip(&pb).take_while(|(x, y)| x == y).count();
+    n.checked_sub(1).map(|i| pa[i])
+}
+
+/// Every cell of every wire lies strictly inside the box that contains both
+/// of its ends.
+fn check_containment(g: &Graph, l: &Layout) {
+    for e in &l.edges {
+        let Some(c) = lca(g, e.from, e.to).and_then(|c| l.box_of(c)) else {
+            continue;
+        };
+        let (x0, y0, x1, y1) = c.bounds.interior();
+        for w in e.points.windows(2) {
+            let (p, q) = (w[0], w[1]);
+            for x in p.0.min(q.0)..=p.0.max(q.0) {
+                for y in p.1.min(q.1)..=p.1.max(q.1) {
+                    assert!(
+                        (x0..=x1).contains(&x) && (y0..=y1).contains(&y),
+                        "{} edge {}->{} leaves {} at ({x},{y})",
+                        e.kind,
+                        g.item(e.from).id,
+                        g.item(e.to).id,
+                        g.item(c.node).id
+                    );
+                }
+            }
+        }
+    }
+}
+
+const STRETCHES: [Stretch; 4] = [
+    Stretch { x: 0, y: 0 },
+    Stretch { x: 5, y: 2 },
+    Stretch { x: 30, y: 6 },
+    Stretch { x: 80, y: 20 },
+];
 
 fn check_geometry(g: &Graph, l: &Layout) {
     for (i, a) in l.boxes.iter().enumerate() {
@@ -68,6 +127,64 @@ fn geometry_is_sound_at_every_zoom_and_expansion() {
     }
     let l = run(&g, None, &all, Zoom::Detail, &enabled);
     assert_eq!(l.boxes.len(), g.len());
+}
+
+#[test]
+fn routes_stay_inside_their_common_container() {
+    let g = common::sample_graph();
+    let enabled = all_types(&g);
+    let ids = |v: &[&str]| -> HashSet<NodeId> { v.iter().map(|id| g.find(id).unwrap()).collect() };
+    let expansions = [ids(&["M1"]), ids(&["M1", "E1", "E2"]), ids(&["M1", "M2", "E2", "E3", "S4"]), all_expanded(&g)];
+    let mut checked = 0;
+    for zoom in [Zoom::Detail, Zoom::Compact, Zoom::Overview] {
+        for st in STRETCHES {
+            for expanded in &expansions {
+                for root in [None, g.find("M1")] {
+                    let l = run_st(&g, root, expanded, zoom, &enabled, st);
+                    check_geometry(&g, &l);
+                    check_containment(&g, &l);
+                    checked += l.edges.len();
+                }
+            }
+        }
+    }
+    assert!(checked > 500, "{checked}");
+}
+
+#[test]
+fn stretch_widens_boxes_first_then_spacing() {
+    let g = common::sample_graph();
+    let enabled = all_types(&g);
+    let none = HashSet::new();
+    let m1 = g.find("M1").unwrap();
+    let size = |st| {
+        let l = run_st(&g, None, &none, Zoom::Detail, &enabled, st);
+        let b = l.box_of(m1).unwrap().bounds;
+        (b.w, b.h, l.width, l.height)
+    };
+    assert_eq!(size(Stretch { x: 0, y: 0 }).0, 26);
+    assert_eq!(size(Stretch { x: 10, y: 0 }).0, 36);
+    assert_eq!(size(Stretch { x: 26, y: 0 }).0, 52, "boxes stop at twice their width");
+    let (w52, ..) = size(Stretch { x: 26, y: 0 });
+    let (w60, _, lw60, _) = size(Stretch { x: 60, y: 0 });
+    assert_eq!(w60, w52);
+    assert!(lw60 > size(Stretch { x: 26, y: 0 }).2, "then the gaps grow");
+    assert_eq!(size(Stretch { x: 0, y: 3 }).1, 8);
+    assert_eq!(size(Stretch { x: 0, y: 9 }).1, 9, "detail boxes gain at most 4 rows");
+}
+
+#[test]
+fn measure_matches_compute_without_edges() {
+    let g = common::sample_graph();
+    let none_types = HashSet::new();
+    let all = all_expanded(&g);
+    for zoom in [Zoom::Detail, Zoom::Overview] {
+        for st in STRETCHES {
+            let p = params(None, &all, zoom, &none_types, st);
+            let l = compute(&g, &p);
+            assert_eq!(measure(&g, &p), (l.width, l.height));
+        }
+    }
 }
 
 #[test]

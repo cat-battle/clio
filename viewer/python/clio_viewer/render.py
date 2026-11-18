@@ -84,6 +84,35 @@ def truncate(s: str, max_len: int) -> str:
     return s[: max_len - 1] + "…"
 
 
+def wrap(text: str, width: int, max_lines: int) -> list[str]:
+    """Greedy word wrap of ``text`` into at most ``max_lines`` lines of
+    ``width`` characters. Words longer than a line are split; whatever does
+    not fit is put on the last line and truncated with ``…``. With
+    ``max_lines == 1`` this is :func:`truncate` of the whitespace-normalised
+    text."""
+    out: list[str] = []
+    if width <= 0 or max_lines <= 0:
+        return out
+    words = text.split()
+    i = 0
+    while i < len(words):
+        if len(out) + 1 == max_lines:
+            out.append(truncate(" ".join(words[i:]), width))
+            break
+        first = words[i]
+        if len(first) > width:
+            out.append(first[:width])
+            words[i] = first[width:]
+            continue
+        line = first
+        i += 1
+        while i < len(words) and len(line) + 1 + len(words[i]) <= width:
+            line += " " + words[i]
+            i += 1
+        out.append(line)
+    return out
+
+
 class Grid:
     """A width x height matrix of (symbol, style) cells."""
 
@@ -241,20 +270,30 @@ def _draw_box(
 
     dim = CellStyle(DIM)
     plain = paint(PLAIN_STYLE)
+    rows = r.h - 2  # text rows inside the border
+    w = max(inner, 0)
     if zoom is Zoom.DETAIL:
+        # id · kind / title (wrapped) / description (if room) / status
         ident = truncate(item.id, inner - 1)
         pen.text(x0 + 1, y0 + 1, ident, inner, bold)
         used = len(ident)
         pen.text(x0 + 1 + used, y0 + 1, f" · {item.kind.label}", inner - used, dim)
-        pen.text(x0 + 1, y0 + 2, truncate(item.title, inner), inner, plain)
+        middle = max(rows - 2, 0)
+        lines = wrap(item.title, w, middle)
+        title_lines = len(lines)
+        if item.description:
+            lines += wrap(item.description, w, middle - title_lines)
+        for i, line in enumerate(lines):
+            pen.text(x0 + 1, y0 + 2 + i, line, inner, plain if i < title_lines else dim)
         st = f"{item.status.glyph} {item.status.label}"
-        pen.text(x0 + 1, y0 + 3, st, inner, paint(CellStyle(status_color(item.status))))
+        pen.text(x0 + 1, y1 - 1, st, inner, paint(CellStyle(status_color(item.status))))
         if item.assignee:
             used = len(st) + 1
             who = truncate(f"@{item.assignee}", max(inner - used, 0))
-            pen.text(x1 - len(who), y0 + 3, who, inner - used, dim)
+            pen.text(x1 - len(who), y1 - 1, who, inner - used, dim)
     elif zoom is Zoom.COMPACT:
-        pen.text(x0 + 1, y0 + 1, truncate(f"{item.id} {item.title}", inner), inner, title_style)
+        for i, line in enumerate(wrap(f"{item.id} {item.title}", w, max(rows, 0))):
+            pen.text(x0 + 1, y0 + 1 + i, line, inner, title_style)
     else:
         pen.text(x0 + 1, y0 + 1, truncate(item.id, inner), inner, title_style)
 

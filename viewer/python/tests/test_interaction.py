@@ -39,14 +39,17 @@ def test_auto_fit_picks_most_detailed_zoom_that_fits():
     screen(s, 150, 38, "e")
     screen(s, 600, 60)
     assert s.zoom is Zoom.DETAIL, "a bigger terminal refits"
-    assert s.camera == (0, 0)
+    vw, vh = s.viewport
+    assert s.layout.width <= vw and s.layout.height <= vh
+    assert s.camera == (-((vw - s.layout.width) // 2), -((vh - s.layout.height) // 2)), "and centred"
 
 
 def test_auto_fit_shows_overflowing_views_from_the_top_left():
     s = new()
     screen(s, 150, 38, "e")
     assert s.layout.width > 150 and s.layout.height <= 37
-    assert s.camera == (0, 0)
+    assert s.camera[0] == 0, "overflowing axis starts at the left"
+    assert s.camera[1] == -((37 - s.layout.height) // 2), "fitting axis is centred"
 
 
 def test_manual_zoom_turns_auto_fit_off_and_z_turns_it_back_on():
@@ -154,3 +157,16 @@ def test_plus_tag_hit_area_is_exactly_the_tag():
     assert not s.expanded, "border cells beside the tag only select"
     click(s, x1 - 4, m2.bottom - 1)
     assert find(s, "M2") in s.expanded, "the '[' opens"
+
+
+def test_auto_fit_stretches_the_view_to_fill_the_terminal():
+    for w, h in ((160, 40), (250, 70)):
+        s = new()
+        screen(s, w, h, "<space>")
+        vw, vh = s.viewport
+        assert s.layout.width <= vw and s.layout.height <= vh
+        assert s.layout.width * 10 >= vw * 9, (w, h, s.layout.width)
+        assert s.stretch.x > 0 and s.stretch.y > 0
+    s = new()
+    screen(s, 250, 70, "<space>+")
+    assert (s.stretch.x, s.stretch.y) == (0, 0), "picking a zoom by hand drops the stretch"

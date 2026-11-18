@@ -44,7 +44,9 @@ fn auto_fit_picks_most_detailed_zoom_that_fits() {
     screen(&mut a, 150, 38, "e");
     screen(&mut a, 600, 60, "");
     assert_eq!(a.zoom, Zoom::Detail, "a bigger terminal refits");
-    assert!(fits(&a) && a.camera == (0, 0), "whole view shown from the origin");
+    assert!(fits(&a), "whole view shown");
+    let (vw, vh) = a.viewport;
+    assert_eq!(a.camera, (-(vw - a.layout.width) / 2, -(vh - a.layout.height) / 2), "and centred");
 }
 
 #[test]
@@ -52,7 +54,8 @@ fn auto_fit_shows_overflowing_views_from_the_top_left() {
     let mut a = app();
     screen(&mut a, 150, 38, "e");
     assert!(a.layout.width > 150 && a.layout.height <= 37);
-    assert_eq!(a.camera, (0, 0));
+    assert_eq!(a.camera.0, 0, "overflowing axis starts at the left");
+    assert_eq!(a.camera.1, -(37 - a.layout.height) / 2, "fitting axis is centred");
 }
 
 #[test]
@@ -159,4 +162,20 @@ fn plus_tag_hit_area_is_exactly_the_tag() {
     assert!(a.expanded.is_empty(), "border cells beside the tag only select");
     click(&mut a, x1 - 4, m2.bottom() - 1);
     assert!(a.expanded.contains(&find(&a, "M2")), "the '[' opens");
+}
+
+#[test]
+fn auto_fit_stretches_the_view_to_fill_the_terminal() {
+    for (w, h) in [(160u16, 40u16), (250, 70)] {
+        let mut a = app();
+        screen(&mut a, w, h, "<space>");
+        let (vw, vh) = a.viewport;
+        assert!(a.layout.width <= vw && a.layout.height <= vh);
+        assert!(a.layout.width * 10 >= vw * 9, "{w}x{h}: width {} of {vw}", a.layout.width);
+        assert!(a.stretch.x > 0 && a.stretch.y > 0);
+    }
+    // Picking a zoom by hand drops the stretch.
+    let mut a = app();
+    screen(&mut a, 250, 70, "<space>+");
+    assert_eq!((a.stretch.x, a.stretch.y), (0, 0));
 }
