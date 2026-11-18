@@ -74,6 +74,22 @@ The status bar shows `trace:both ↑2 ↓5 (3 hidden, T shows)`, counting each
 traced item once (an epic and its stories count as one). `T` expands boxes, and
 drills out if needed, so every traced item gets its own box.
 
+## Quick start
+
+```sh
+scripts/viewer.sh install          # Linux / macOS
+scripts/viewer.sh run rust         # or: run python; opens the sample plan
+scripts/viewer.sh run python --file my-plan.json
+```
+
+```powershell
+scripts\viewer.ps1 install         # Windows, PowerShell 7
+scripts\viewer.ps1 run rust
+```
+
+`test` runs both test suites. See [docs/guide.md](docs/guide.md#2-getting-started) for
+prerequisites and Windows notes.
+
 ## Layout of this folder
 
 | Path | What |
@@ -82,6 +98,7 @@ drills out if needed, so every traced item gets its own box.
 | `schema/clio-tasks.schema.json` | Canonical data format shared by every implementation |
 | `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
 | `fixtures/jira_search_sample.json` | Recorded Jira search response, used by the adapter tests |
+| `scripts/` | `viewer.sh` (Linux/macOS) and `viewer.ps1` (Windows, PowerShell 7): install, run and test both viewers |
 | `rust/` | Rust + [ratatui](https://ratatui.rs) implementation |
 | `python/` | Python + [Textual](https://textual.textualize.io) implementation |
 

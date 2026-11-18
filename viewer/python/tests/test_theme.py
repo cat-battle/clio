@@ -126,3 +126,14 @@ def test_cards_are_filled_up_to_and_under_their_border(keys):
                     assert bgs[sy][sx] == MOCHA.card, (s.graph.item(b.node).id, x - r.x, y - r.y, bgs[sy][sx])
                     checked += 1
     assert checked > 50
+
+
+def test_windows_terminal_counts_as_true_colour(capsys, monkeypatch):
+    monkeypatch.delenv("CLIO_THEME", raising=False)
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.setenv("WT_SESSION", "0f9c2b7e-1234")
+    assert main(["--file", str(FIXTURES / "sample.json"), "--snapshot", "100x20", "--styles"]) == 0
+    assert "#89b4fa" in capsys.readouterr().out, "mocha under Windows Terminal"
+    monkeypatch.delenv("WT_SESSION")
+    assert main(["--file", str(FIXTURES / "sample.json"), "--snapshot", "100x20", "--styles"]) == 0
+    assert "#" not in capsys.readouterr().out.split("--- styles ---")[1], "classic otherwise"

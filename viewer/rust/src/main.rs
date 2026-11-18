@@ -37,8 +37,8 @@ struct Cli {
     keys: Option<String>,
 
     /// Colour theme: mocha (Catppuccin, true colour) or classic (16 colours).
-    /// Default: $CLIO_THEME, else mocha if $COLORTERM says the terminal has
-    /// true colour, else classic.
+    /// Default: $CLIO_THEME, else mocha if the terminal has true colour
+    /// ($COLORTERM, or Windows Terminal), else classic.
     #[arg(long, value_name = "NAME")]
     theme: Option<String>,
 
@@ -49,10 +49,15 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Windows Terminal has true colour but doesn't set COLORTERM.
+    let colorterm = std::env::var("COLORTERM")
+        .ok()
+        .filter(|c| !c.is_empty())
+        .or_else(|| std::env::var_os("WT_SESSION").map(|_| "truecolor".to_string()));
     let theme = Theme::resolve(
         cli.theme.as_deref(),
         std::env::var("CLIO_THEME").ok().as_deref(),
-        std::env::var("COLORTERM").ok().as_deref(),
+        colorterm.as_deref(),
     )
     .map_err(anyhow::Error::msg)?;
     let loader: Box<dyn Loader> = if cli.jira {

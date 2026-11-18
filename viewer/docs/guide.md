@@ -38,14 +38,40 @@ the viewer to reload.
 
 ## 2. Getting started
 
-### Rust
+### With the helper scripts (easiest)
+
+`viewer/scripts/` has one script per platform. Both take the same commands:
+
+| Linux / macOS (bash) | Windows (PowerShell 7) | What it does |
+|---|---|---|
+| `scripts/viewer.sh install` | `scripts\viewer.ps1 install` | Checks prerequisites, builds the Rust viewer (release) and creates the Python virtual environment in `python/.venv`. `install rust` or `install python` does just one. `--jira` builds the Rust viewer with Jira support. |
+| `scripts/viewer.sh run rust` | `scripts\viewer.ps1 run rust` | Runs a viewer, installing it first if needed. With no `--file` or `--jira` it opens the sample plan. |
+| `scripts/viewer.sh run python --file plan.json` | `scripts\viewer.ps1 run python --file plan.json` | Everything after the viewer name goes to the viewer. Relative paths are resolved from the directory you are in. |
+| `scripts/viewer.sh test` | `scripts\viewer.ps1 test` | Runs both test suites, including the Rust/Python parity tests. `test rust` or `test python` runs one. |
+
+Prerequisites (the scripts check them and say what to install):
+
+- **Rust viewer:** a Rust toolchain (`cargo`). On Windows install it with
+  `winget install Rustlang.Rustup`, which also needs the Visual Studio C++ Build
+  Tools (`winget install Microsoft.VisualStudio.2022.BuildTools`).
+- **Python viewer:** Python 3.10 or newer. On Windows use
+  `winget install Python.Python.3.13`; the script finds it through the `py`
+  launcher. Set `CLIO_PYTHON` to use a particular interpreter.
+
+On Windows, use **Windows Terminal** for the best result: full colour (the
+viewer detects it and picks the mocha theme), mouse support, and box-drawing
+characters. If PowerShell refuses to run the script because of the execution
+policy, run it once as `pwsh -ExecutionPolicy Bypass -File scripts\viewer.ps1 install`,
+or unblock the downloaded file with `Unblock-File scripts\viewer.ps1`.
+
+### Rust (by hand)
 
 ```sh
 cd viewer/rust
 cargo run --release -- --file ../fixtures/sample.json
 ```
 
-### Python (3.10 or newer)
+### Python (by hand; 3.10 or newer)
 
 ```sh
 cd viewer/python
@@ -124,8 +150,8 @@ The theme is chosen in this order:
 
 1. `--theme NAME`
 2. the `CLIO_THEME` environment variable
-3. otherwise **mocha** if `COLORTERM` is `truecolor` or `24bit`, and classic
-   if not.
+3. otherwise **mocha** if the terminal has true colour (`COLORTERM` is
+   `truecolor` or `24bit`, or it is Windows Terminal), and classic if not.
 
 Press **`C`** to switch themes while the viewer runs.
 

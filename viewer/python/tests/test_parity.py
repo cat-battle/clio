@@ -8,6 +8,7 @@ skipped when it has not been built.
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,8 @@ from clio_viewer.views import snapshot_styles
 
 from .conftest import FIXTURES, sample_doc
 
-RUST_BIN = Path(os.environ.get("CLIO_RUST_BIN", FIXTURES.parent / "rust" / "target" / "debug" / "clio-viewer"))
+EXE = ".exe" if sys.platform == "win32" else ""
+RUST_BIN = Path(os.environ.get("CLIO_RUST_BIN", FIXTURES.parent / "rust" / "target" / "debug" / f"clio-viewer{EXE}"))
 
 pytestmark = pytest.mark.skipif(not RUST_BIN.exists(), reason=f"Rust viewer not built ({RUST_BIN})")
 

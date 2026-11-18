@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--theme",
         metavar="NAME",
         help="colour theme: mocha (Catppuccin, true colour) or classic (16 colours); default: "
-        "$CLIO_THEME, else mocha if $COLORTERM says the terminal has true colour, else classic",
+        "$CLIO_THEME, else mocha if the terminal has true colour ($COLORTERM, or Windows Terminal), else classic",
     )
     p.add_argument("--styles", action="store_true", help="with --snapshot: also print per-cell styles")
     return p
@@ -57,7 +57,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     try:
-        theme = resolve_theme(args.theme, os.environ.get("CLIO_THEME"), os.environ.get("COLORTERM"))
+        # Windows Terminal has true colour but doesn't set COLORTERM.
+        colorterm = os.environ.get("COLORTERM") or ("truecolor" if "WT_SESSION" in os.environ else None)
+        theme = resolve_theme(args.theme, os.environ.get("CLIO_THEME"), colorterm)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
