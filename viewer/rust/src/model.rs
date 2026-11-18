@@ -114,10 +114,47 @@ pub struct Graph {
     link_types: Vec<String>,
 }
 
+/// Replaces every control character (Unicode Cc: C0, DEL, C1) with a space,
+/// so data from a file or Jira cannot send escape sequences (OSC 52 clipboard
+/// writes, hyperlinks, ...) to the terminal. Descriptions keep `\n`.
+/// Mirrors `sanitize` in `viewer/python/clio_viewer/model.py`.
+pub fn sanitize(doc: &mut Document) {
+    fn clean(s: &mut String, keep_newlines: bool) {
+        if s.chars().any(|c| c.is_control()) {
+            *s = s
+                .chars()
+                .map(|c| {
+                    if c.is_control() && !(keep_newlines && c == '\n') {
+                        ' '
+                    } else {
+                        c
+                    }
+                })
+                .collect();
+        }
+    }
+    for it in &mut doc.items {
+        clean(&mut it.id, false);
+        clean(&mut it.title, false);
+        for s in [&mut it.parent, &mut it.assignee].into_iter().flatten() {
+            clean(s, false);
+        }
+        if let Some(d) = &mut it.description {
+            clean(d, true);
+        }
+    }
+    for l in &mut doc.links {
+        clean(&mut l.from, false);
+        clean(&mut l.to, false);
+        clean(&mut l.kind, false);
+    }
+}
+
 impl Graph {
     /// Builds a graph, checking that ids are unique, every parent and link endpoint
-    /// exists, and the parent relation has no cycles.
-    pub fn from_document(doc: Document) -> Result<Self> {
+    /// exists, and the parent relation has no cycles. Text is [`sanitize`]d first.
+    pub fn from_document(mut doc: Document) -> Result<Self> {
+        sanitize(&mut doc);
         if doc.version != FORMAT_VERSION {
             bail!(
                 "unsupported format version {} (expected {FORMAT_VERSION})",

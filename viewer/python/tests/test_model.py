@@ -69,3 +69,16 @@ def test_round_trip_to_dict():
     doc = sample_doc()
     again = Document.from_dict(json.loads(json.dumps(doc.to_dict())))
     assert again == doc
+
+
+def test_control_characters_are_replaced():
+    doc = sample_doc()
+    it = doc.items[2]
+    it.title = "Hi\x1b]52;c;eA==\x07"
+    it.assignee = "bob\x9b"
+    it.description = "a\r\nb\x1b"
+    g = Graph(doc)
+    got = g.item(g.find(it.id))
+    assert got.title == "Hi ]52;c;eA== "
+    assert got.assignee == "bob "
+    assert got.description == "a \nb "

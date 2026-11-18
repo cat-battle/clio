@@ -250,6 +250,15 @@ The `jira` feature uses `reqwest` with `rustls`, which builds the AWS-LC C libra
 aws-lc-rs build requirements if the build fails). The Python viewer's Jira loader
 needs no build at all. Neither loader has been tried against a live Jira site yet.
 
+**Security.** Both loaders require an `https://` `JIRA_URL` and never follow
+redirects, so your token is never re-sent to another host or over plain http. A
+redirect is reported as an error instead. Every text field read from a file or from Jira
+has its control characters replaced with spaces (descriptions keep newlines), so
+task data can't send escape sequences such as OSC 52 clipboard writes to your terminal.
+Known and accepted: both HTTP clients honour `HTTPS_PROXY` and the system proxy;
+`JIRA_API_TOKEN` is inherited by child processes of your shell; and `TEXTUAL_*`
+environment variables can change how the Python viewer behaves.
+
 ### Tests
 
 ```sh

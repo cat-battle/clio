@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
 
@@ -152,10 +153,43 @@ class ResolvedLink:
     type: str
 
 
+# Unicode category Cc: C0 controls, DEL and C1 controls (the same set as
+# Rust's ``char::is_control``).
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f]")
+_CONTROL_BUT_NEWLINE = re.compile("[\x00-\x09\x0b-\x1f\x7f-\x9f]")
+
+
+def _clean(s: str | None, keep_newlines: bool = False) -> str | None:
+    if s is None:
+        return None
+    return (_CONTROL_BUT_NEWLINE if keep_newlines else _CONTROL).sub(" ", s)
+
+
+def sanitize(doc: Document) -> Document:
+    """Returns a copy of ``doc`` with every control character replaced by a
+    space, so data from a file or Jira cannot send escape sequences (OSC 52
+    clipboard writes, hyperlinks, ...) to the terminal. Descriptions keep
+    ``\\n``. Mirrors ``sanitize`` in ``viewer/rust/src/model.rs``."""
+    items = [
+        replace(
+            it,
+            id=_clean(it.id),
+            title=_clean(it.title),
+            parent=_clean(it.parent),
+            assignee=_clean(it.assignee),
+            description=_clean(it.description, keep_newlines=True),
+        )
+        for it in doc.items
+    ]
+    links = [Link(_clean(l.source), _clean(l.target), _clean(l.type)) for l in doc.links]  # type: ignore[arg-type]
+    return Document(doc.version, items, links)
+
+
 class Graph:
     """Validated, indexed task forest plus typed links."""
 
     def __init__(self, doc: Document) -> None:
+        doc = sanitize(doc)
         if doc.version != FORMAT_VERSION:
             raise ValidationError(f"unsupported format version {doc.version} (expected {FORMAT_VERSION})")
         n = len(doc.items)

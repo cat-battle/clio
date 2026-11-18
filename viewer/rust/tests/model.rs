@@ -57,3 +57,18 @@ fn rejects_unknown_fields_and_versions() {
     doc.version = 2;
     assert!(Graph::from_document(doc).is_err());
 }
+
+#[test]
+fn control_characters_are_replaced() {
+    let mut doc = common::sample_doc();
+    let it = &mut doc.items[2];
+    it.title = "Hi\x1b]52;c;eA==\x07".into();
+    it.assignee = Some("bob\u{9b}".into());
+    it.description = Some("a\r\nb\x1b".into());
+    let id = it.id.clone();
+    let g = Graph::from_document(doc).unwrap();
+    let got = g.item(g.find(&id).unwrap());
+    assert_eq!(got.title, "Hi ]52;c;eA== ");
+    assert_eq!(got.assignee.as_deref(), Some("bob "));
+    assert_eq!(got.description.as_deref(), Some("a \nb "));
+}

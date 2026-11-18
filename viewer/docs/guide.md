@@ -726,6 +726,10 @@ for only stories shows them all as top-level boxes.
 This has been tested against recorded Jira responses only, not a live Jira
 site.
 
+`JIRA_URL` must start with `https://`, and redirects are never followed: the
+loader stops with an error rather than re-sending your credentials elsewhere.
+If your site redirects (say, to a new domain), set `JIRA_URL` to the final address.
+
 ---
 
 ## 10. Troubleshooting

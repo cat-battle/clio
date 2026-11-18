@@ -58,10 +58,21 @@ impl Loader for JiraLoader {
 fn fetch_issues(cfg: &JiraLoader) -> Result<Vec<Value>> {
     use std::time::Duration;
 
+    let scheme_ok = cfg.base_url.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://"));
+    if !scheme_ok {
+        anyhow::bail!("JIRA_URL must start with https://");
+    }
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
+        // Never follow redirects: reqwest keeps Authorization on a same-host
+        // https -> http downgrade.
+        .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let endpoint = format!("{}/rest/api/3/search/jql", cfg.base_url.trim_end_matches('/'));
+    let endpoint = reqwest::Url::parse(&format!(
+        "{}/rest/api/3/search/jql",
+        cfg.base_url.trim_end_matches('/')
+    ))
+    .with_context(|| format!("bad JIRA_URL {:?}", cfg.base_url))?;
     let mut issues = Vec::new();
     let mut page_token: Option<String> = None;
     for _ in 0..1000 {
@@ -73,14 +84,21 @@ fn fetch_issues(cfg: &JiraLoader) -> Result<Vec<Value>> {
         if let Some(t) = &page_token {
             params.push(("nextPageToken", t.clone()));
         }
-        let url = reqwest::Url::parse_with_params(&endpoint, &params)
-            .with_context(|| format!("bad JIRA_URL {:?}", cfg.base_url))?;
-        let page: Value = client
+        let mut url = endpoint.clone();
+        url.query_pairs_mut().extend_pairs(&params);
+        let resp = client
             .get(url)
             .basic_auth(&cfg.email, Some(&cfg.token))
             .header("Accept", "application/json")
             .send()
-            .context("calling Jira")?
+            .context("calling Jira")?;
+        if resp.status().is_redirection() {
+            anyhow::bail!(
+                "Jira answered {} (redirect); not following it with your credentials",
+                resp.status()
+            );
+        }
+        let page: Value = resp
             .error_for_status()
             .context("Jira returned an error")?
             .json()

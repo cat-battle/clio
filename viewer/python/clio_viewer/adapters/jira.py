@@ -21,6 +21,17 @@ from ..model import FORMAT_VERSION, Document, Item, Kind, Link, Status, Validati
 FIELDS = "summary,status,issuetype,parent,assignee,issuelinks,description"
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuses redirects: urllib would resend the Authorization header to
+    whatever host (or plain-http URL) the Location header names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None  # surfaces as HTTPError(3xx)
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 class JiraLoader:
     def __init__(self, base_url: str, email: str, token: str, jql: str) -> None:
         self.base_url = base_url
@@ -46,6 +57,8 @@ class JiraLoader:
         return f"jira: {self.jql}"
 
     def fetch_issues(self) -> list[dict[str, Any]]:
+        if urllib.parse.urlsplit(self.base_url).scheme.lower() != "https":
+            raise ValidationError("JIRA_URL must start with https://")
         endpoint = f"{self.base_url.rstrip('/')}/rest/api/3/search/jql"
         auth = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
         issues: list[dict[str, Any]] = []
@@ -59,7 +72,7 @@ class JiraLoader:
                 headers={"Authorization": f"Basic {auth}", "Accept": "application/json"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with _OPENER.open(req, timeout=30) as resp:
                     page = json.load(resp)
             except urllib.error.HTTPError as e:
                 raise ValidationError(f"Jira returned HTTP {e.code}: {e.reason}") from e
