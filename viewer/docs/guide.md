@@ -230,6 +230,7 @@ Press `?` at any time to show the key list.
 | Click a box | Select it. Inside open boxes, the innermost box under the pointer is selected. |
 | Click `[+N]` on a closed box | Open it. |
 | Click the top border of an open box (its title or `[-]`) | Close it. |
+| Double right-click | Close the innermost open box under the pointer and select it. On a closed box inside a container, that container closes. On empty canvas it acts like `x`. A single right-click does nothing. |
 | Wheel | Pan up / down. |
 | Shift+wheel (or a sideways wheel) | Pan left / right. |
 
@@ -274,6 +275,7 @@ Pick whichever is closest to hand:
   pressing `x` repeatedly closes one level at a time. At the top of a
   drilled-in view, `x` drills back out.
 - **Click** the top border of an open box.
+- **Double right-click** anywhere inside an open box (or on a box within it).
 - **Space** on the open box itself (`p` selects the parent first).
 - **`E`** closes everything in the current view.
 

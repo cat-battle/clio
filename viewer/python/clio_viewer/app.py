@@ -3,6 +3,8 @@ and modal screens for help, relationship filters and search."""
 
 from __future__ import annotations
 
+import time
+
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
@@ -46,9 +48,15 @@ class Canvas(Widget):
 
     # Mouse: click selects / opens / closes, the wheel pans.
     def on_click(self, event: events.Click) -> None:
-        if self.state.click(event.x, event.y):
+        if event.button == 1 and self.state.click(event.x, event.y):
             event.stop()
             self.app.refresh_view()  # type: ignore[attr-defined]
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button == 3:  # right
+            event.stop()
+            if self.state.right_press(event.x, event.y, time.monotonic()):
+                self.app.refresh_view()  # type: ignore[attr-defined]
 
     def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
         self._scroll(event, down=True)

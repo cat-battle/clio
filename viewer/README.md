@@ -19,7 +19,7 @@ that behaves like an RTL/schematic viewer:
   **stretches the layout to fill the terminal** (wider boxes, wrapped titles,
   description previews, wider spacing) and refits on resize.
 - **Mouse:** click to select, click `[+N]` / an open box's title bar to open /
-  close, wheel to pan.
+  close, double right-click to close the open box under the pointer, wheel to pan.
 - **Dependency tracing** (`t`) lights up everything the selected box depends on
   and everything that depends on it, and greys out the rest. This works like
   fan-in/fan-out cone tracing in an RTL viewer.
@@ -208,4 +208,4 @@ in `viewer/rust`) or `CLIO_RUST_BIN` is set.
 | `C` | colour theme: mocha / classic |
 | `?` | help |
 | `q` | quit |
-| mouse | click: select · click `[+N]` / title bar: open / close · wheel: pan (Shift: sideways) |
+| mouse | click: select · click `[+N]` / title bar: open / close · double right-click: close the open box under the pointer · wheel: pan (Shift: sideways) |

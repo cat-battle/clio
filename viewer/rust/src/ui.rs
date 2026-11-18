@@ -238,6 +238,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("/ , n", "search id/title, next match"),
     ("R", "reload data source"),
     ("mouse", "click select · [+] / [-] or title: open/close"),
+    ("double right-click", "close the open box under the pointer"),
     ("wheel", "pan (Shift+wheel: sideways)"),
     ("q", "quit"),
 ];

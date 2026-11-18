@@ -179,3 +179,88 @@ fn auto_fit_stretches_the_view_to_fill_the_terminal() {
     screen(&mut a, 250, 70, "<space>+");
     assert_eq!((a.stretch.x, a.stretch.y), (0, 0));
 }
+
+fn screen_xy(a: &App, x: i32, y: i32) -> (i32, i32) {
+    (x - a.camera.0, y - a.camera.1)
+}
+
+#[test]
+fn double_right_click_closes_the_open_box_under_the_pointer() {
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let ms = |n| t0 + Duration::from_millis(n);
+
+    // Inside open E1 (its empty interior): E1 closes and is selected.
+    let mut a = app();
+    a.reveal(find(&a, "T1")); // opens M1, E1, S1
+    a.selected = a.graph.find("M2");
+    screen(&mut a, 200, 50, "");
+    let e1 = a.layout.box_of(find(&a, "E1")).unwrap().bounds;
+    let (sx, sy) = screen_xy(&a, e1.x + 1, e1.bottom() - 2);
+    assert!(!a.right_press(sx, sy, ms(0)), "a single right-click does nothing");
+    assert!(a.expanded.contains(&find(&a, "E1")));
+    assert!(a.right_press(sx + 1, sy, ms(300)), "second press nearby and in time");
+    assert!(!a.expanded.contains(&find(&a, "E1")));
+    assert_eq!(sel(&a), "E1");
+    assert!(a.expanded.contains(&find(&a, "M1")), "only the innermost open box closes");
+
+    // On a closed box inside an open one: the box around it closes.
+    let mut a = app();
+    a.reveal(find(&a, "S3")); // opens M1, E1
+    screen(&mut a, 200, 50, "");
+    let s3 = a.layout.box_of(find(&a, "S3")).unwrap().bounds;
+    let (sx, sy) = screen_xy(&a, s3.x + 3, s3.y + 1);
+    a.right_press(sx, sy, ms(0));
+    a.right_press(sx, sy, ms(100));
+    assert!(!a.expanded.contains(&find(&a, "E1")) && sel(&a) == "E1");
+}
+
+#[test]
+fn double_right_click_needs_two_quick_presses_in_one_place() {
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let ms = |n| t0 + Duration::from_millis(n);
+    let mut a = app();
+    screen(&mut a, 200, 50, "<space>");
+    let m1 = a.layout.box_of(find(&a, "M1")).unwrap().bounds;
+    let (sx, sy) = screen_xy(&a, m1.x + 1, m1.y + 1);
+
+    assert!(!a.right_press(sx, sy, ms(0)));
+    assert!(!a.right_press(sx, sy, ms(500)), "too slow: starts a new pair");
+    assert!(!a.right_press(sx + 5, sy, ms(600)), "too far away");
+    assert!(a.expanded.contains(&find(&a, "M1")));
+    assert!(a.right_press(sx + 5, sy, ms(700)));
+    assert!(a.expanded.is_empty());
+    assert!(!a.right_press(sx + 5, sy, ms(800)), "a third press starts over");
+}
+
+#[test]
+fn double_right_click_on_empty_canvas_acts_like_x() {
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let mut a = app();
+    a.reveal(find(&a, "T1"));
+    screen(&mut a, 200, 50, "");
+    // Bottom-right corner of the canvas: no box there.
+    a.right_press(199, 48, t0);
+    a.right_press(199, 48, t0 + Duration::from_millis(50));
+    assert_eq!(sel(&a), "S1", "T1's box (S1) closed, as `x` would");
+    assert!(!a.expanded.contains(&find(&a, "S1")));
+}
+
+#[test]
+fn right_presses_arrive_through_handle_mouse() {
+    let mut a = app();
+    screen(&mut a, 200, 50, "<space>");
+    let m1 = a.layout.box_of(find(&a, "M1")).unwrap().bounds;
+    let (sx, sy) = screen_xy(&a, m1.x + 1, m1.y + 1);
+    let press = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        column: sx as u16,
+        row: sy as u16,
+        modifiers: KeyModifiers::NONE,
+    };
+    a.handle_mouse(press);
+    a.handle_mouse(press);
+    assert!(a.expanded.is_empty(), "two immediate right-presses close M1");
+}

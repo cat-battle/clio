@@ -12,6 +12,10 @@ from .model import Graph, NodeId
 from .theme import MOCHA, Theme
 from .trace import Trace, TraceMode
 
+# Two right-presses closer together than this (seconds), and within a cell of
+# each other, are a double right-click.
+DOUBLE_CLICK = 0.4
+
 PAN_X = 8
 PAN_Y = 4
 
@@ -39,6 +43,7 @@ class ViewerState:
         self._follow_pending = True
         self._center_pending = False
         self._fit_pending = True
+        self._last_right: tuple[float, int, int] | None = None  # last unpaired right-press
         self.relayout()
 
     # ---------------------------------------------------------------- layout
@@ -271,6 +276,39 @@ class ViewerState:
             self.drill_out()
         else:
             self.message = "nothing to close"
+
+    def right_press(self, sx: int, sy: int, now: float) -> bool:
+        """A right-press at canvas cell (sx, sy) at time ``now`` (seconds).
+        The second of two presses within ``DOUBLE_CLICK`` and one cell of each
+        other is a double right-click, which closes the box under the pointer
+        (see :meth:`close_at`). Returns True when it was a double click."""
+        last, self._last_right = self._last_right, None
+        double = (
+            last is not None
+            and 0 <= now - last[0] <= DOUBLE_CLICK
+            and abs(sx - last[1]) <= 1
+            and abs(sy - last[2]) <= 1
+        )
+        if double:
+            self.message = None
+            self.close_at(sx, sy)
+        else:
+            self._last_right = (now, sx, sy)
+        return double
+
+    def close_at(self, sx: int, sy: int) -> None:
+        """Closes the innermost open box under canvas cell (sx, sy) and
+        selects it: the container itself when pointing at it, the container
+        around a closed box when pointing at that. Away from any open box it
+        does what ``x`` does for the selection."""
+        x, y = sx + self.camera[0], sy + self.camera[1]
+        hit = next((b for b in reversed(self.layout.boxes) if b.expanded and b.bounds.contains_point(x, y)), None)
+        if hit is None:
+            self.close_enclosing()
+            return
+        self.expanded.discard(hit.node)
+        self.selected = hit.node
+        self.relayout()
 
     def click(self, sx: int, sy: int) -> bool:
         """Mouse click at canvas cell (sx, sy): selects the innermost box

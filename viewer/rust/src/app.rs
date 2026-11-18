@@ -1,6 +1,7 @@
 //! Viewer state and input handling. Rendering lives in [`crate::ui`].
 
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -11,6 +12,10 @@ use crate::layout::{self, Layout, LayoutParams, Stretch, Zoom};
 use crate::model::{Graph, NodeId};
 use crate::theme::{MOCHA, Theme};
 use crate::trace::{Trace, TraceMode};
+
+/// Two right-presses closer together than this (and within a cell of each
+/// other) are a double right-click.
+pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 const PAN_X: i32 = 8;
 const PAN_Y: i32 = 4;
@@ -57,6 +62,8 @@ pub struct App {
     follow_pending: bool,
     center_pending: bool,
     fit_pending: bool,
+    /// Time and cell of the last unpaired right-press.
+    last_right: Option<(Instant, i32, i32)>,
 }
 
 impl App {
@@ -85,6 +92,7 @@ impl App {
             follow_pending: true,
             center_pending: false,
             fit_pending: true,
+            last_right: None,
         };
         app.relayout();
         app
@@ -452,6 +460,9 @@ impl App {
                 self.message = None;
                 self.click(sx, sy);
             }
+            MouseEventKind::Down(MouseButton::Right) => {
+                self.right_press(sx, sy, Instant::now());
+            }
             MouseEventKind::ScrollUp if shift => self.pan(-PAN_X, 0),
             MouseEventKind::ScrollDown if shift => self.pan(PAN_X, 0),
             MouseEventKind::ScrollUp => self.pan(0, -PAN_Y),
@@ -459,6 +470,46 @@ impl App {
             MouseEventKind::ScrollLeft => self.pan(-PAN_X, 0),
             MouseEventKind::ScrollRight => self.pan(PAN_X, 0),
             _ => {}
+        }
+    }
+
+    /// A right-press at canvas cell (`sx`, `sy`) at time `now`. The second of
+    /// two presses within [`DOUBLE_CLICK`] and one cell of each other is a
+    /// double right-click, which closes the box under the pointer (see
+    /// [`App::close_at`]). Returns true when it was a double click.
+    pub fn right_press(&mut self, sx: i32, sy: i32, now: Instant) -> bool {
+        let double = self.last_right.take().is_some_and(|(t, px, py)| {
+            now.saturating_duration_since(t) <= DOUBLE_CLICK && (sx - px).abs() <= 1 && (sy - py).abs() <= 1
+        });
+        if double {
+            self.message = None;
+            self.close_at(sx, sy);
+        } else {
+            self.last_right = Some((now, sx, sy));
+        }
+        double
+    }
+
+    /// Closes the innermost open box under canvas cell (`sx`, `sy`) and
+    /// selects it: the container itself when pointing at it, the container
+    /// around a closed box when pointing at that. Away from any open box it
+    /// does what `x` does for the selection.
+    pub fn close_at(&mut self, sx: i32, sy: i32) {
+        let (x, y) = (sx + self.camera.0, sy + self.camera.1);
+        let open = self
+            .layout
+            .boxes
+            .iter()
+            .rev()
+            .find(|b| b.expanded && b.bounds.contains_point(x, y))
+            .map(|b| b.node);
+        match open {
+            Some(n) => {
+                self.expanded.remove(&n);
+                self.selected = Some(n);
+                self.relayout();
+            }
+            None => self.close_enclosing(),
         }
     }
 

@@ -170,3 +170,79 @@ def test_auto_fit_stretches_the_view_to_fill_the_terminal():
     s = new()
     screen(s, 250, 70, "<space>+")
     assert (s.stretch.x, s.stretch.y) == (0, 0), "picking a zoom by hand drops the stretch"
+
+
+def xy(s, x, y):
+    return x - s.camera[0], y - s.camera[1]
+
+
+def test_double_right_click_closes_the_open_box_under_the_pointer():
+    s = new()
+    s.reveal(find(s, "T1"))  # opens M1, E1, S1
+    s.selected = find(s, "M2")
+    screen(s, 200, 50)
+    e1 = s.layout.box_of(find(s, "E1")).bounds
+    sx, sy = xy(s, e1.x + 1, e1.bottom - 2)
+    assert not s.right_press(sx, sy, 0.0), "a single right-click does nothing"
+    assert find(s, "E1") in s.expanded
+    assert s.right_press(sx + 1, sy, 0.3), "second press nearby and in time"
+    assert find(s, "E1") not in s.expanded and sel(s) == "E1"
+    assert find(s, "M1") in s.expanded, "only the innermost open box closes"
+
+    s = new()
+    s.reveal(find(s, "S3"))  # opens M1, E1
+    screen(s, 200, 50)
+    s3 = s.layout.box_of(find(s, "S3")).bounds
+    sx, sy = xy(s, s3.x + 3, s3.y + 1)
+    s.right_press(sx, sy, 0.0)
+    s.right_press(sx, sy, 0.1)
+    assert find(s, "E1") not in s.expanded and sel(s) == "E1"
+
+
+def test_double_right_click_needs_two_quick_presses_in_one_place():
+    s = new()
+    screen(s, 200, 50, "<space>")
+    m1 = s.layout.box_of(find(s, "M1")).bounds
+    sx, sy = xy(s, m1.x + 1, m1.y + 1)
+    assert not s.right_press(sx, sy, 0.0)
+    assert not s.right_press(sx, sy, 0.5), "too slow: starts a new pair"
+    assert not s.right_press(sx + 5, sy, 0.6), "too far away"
+    assert find(s, "M1") in s.expanded
+    assert s.right_press(sx + 5, sy, 0.7)
+    assert not s.expanded
+    assert not s.right_press(sx + 5, sy, 0.8), "a third press starts over"
+
+
+def test_double_right_click_on_empty_canvas_acts_like_x():
+    s = new()
+    s.reveal(find(s, "T1"))
+    screen(s, 200, 50)
+    s.right_press(199, 48, 0.0)
+    s.right_press(199, 48, 0.05)
+    assert sel(s) == "S1" and find(s, "S1") not in s.expanded
+
+
+def test_double_right_click_in_textual_app():
+    async def main():
+        app = ClioViewer(new())
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.press("space")
+            await pilot.pause()
+            st = app.state
+            m2 = st.layout.box_of(find(st, "M2")).bounds
+            tag = (m2.right - 3 - st.camera[0], m2.bottom - 1 - st.camera[1])
+            await pilot.click("#canvas", offset=tag, button=3)
+            await pilot.pause()
+            assert find(st, "M2") not in st.expanded and sel(st) == "M1", "right-click is not a left-click"
+            await asyncio.sleep(0.45)  # let that press expire
+            m1 = st.layout.box_of(find(st, "M1")).bounds
+            off = (m1.x + 1 - st.camera[0], m1.y + 1 - st.camera[1])
+            await pilot.click("#canvas", offset=off, button=3)
+            await pilot.pause()
+            assert find(st, "M1") in st.expanded, "one right-click does nothing"
+            assert sel(st) == "M1"
+            await pilot.click("#canvas", offset=off, button=3)
+            await pilot.pause()
+            assert not st.expanded and sel(st) == "M1"
+
+    asyncio.run(main())
