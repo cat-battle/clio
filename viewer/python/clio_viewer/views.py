@@ -12,8 +12,10 @@ from .trace import Role, Trace, TraceMode
 HELP: list[tuple[str, str]] = [
     ("arrows / hjkl", "move selection (→/↓ on open box: enter)"),
     ("Shift+arrows / HJKL", "pan the camera"),
-    ("+ / -", "zoom in / out (detail level)"),
+    ("+ / -", "zoom in / out (turns auto-fit off)"),
+    ("z", "auto-fit zoom on / off"),
     ("space", "expand / collapse box in place"),
+    ("x", "close open box, or the box around it"),
     ("enter", "drill into box"),
     ("esc / backspace", "drill out"),
     ("e / E", "expand all / collapse all"),
@@ -25,6 +27,8 @@ HELP: list[tuple[str, str]] = [
     ("T", "expand to show the whole trace"),
     ("/ , n", "search id/title, next match"),
     ("R", "reload data source"),
+    ("mouse", "click select · [+] / [-] or title: open/close"),
+    ("wheel", "pan (Shift+wheel: sideways)"),
     ("q", "quit"),
 ]
 
@@ -36,7 +40,8 @@ def status_text(state: ViewerState, trace: Trace | None = None) -> Text:
     for n in state.drill:
         t.append(" › ", style="grey50")
         t.append(g.item(n).id, style="bold")
-    t.append(f"  │ zoom:{state.zoom.label} │", style="grey50")
+    auto = " (auto)" if state.auto_fit else ""
+    t.append(f"  │ zoom:{state.zoom.label}{auto} │", style="grey50")
     for lt in g.link_types:
         if lt in state.enabled:
             t.append(f" ■ {lt}", style=link_color(g.link_types, lt))

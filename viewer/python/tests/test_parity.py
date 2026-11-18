@@ -27,6 +27,8 @@ SCRIPTS = [
     "", "<space>", "e", "e-", "e--", "<enter>l<enter>", "e<space>jjl", "eLLJ", "<space>ll<space>-", "e<enter>pE",
     # dependency tracing: both / upstream / downstream, lifted, revealed, drilled
     "t", "e-t", "e-jjlt", "et-jjltt", "et-jjlttt", "<space>lltT", "<space>ll<enter>jT", "e-lllttttt",
+    # auto-fit and closing with x
+    "<space>l<space>", "<space>l<space>jx", "exxx", "e-z", "<space>l<enter>x", "e+", "<space>l<space>xxxx",
 ]
 SIZES = [(110, 30), (200, 45), (61, 17)]
 

@@ -116,7 +116,7 @@ def test_snapshot_text(state):
     lines = out.splitlines()
     assert len(lines) == 20 and all(len(l) == 120 for l in lines)
     assert "M1 Beta launch" in out and "E1 · epic" in out
-    assert lines[-1].startswith(" Top  │ zoom:detail │ ■ blocks")
+    assert lines[-1].startswith(" Top  │ zoom:detail (auto) │ ■ blocks")
     with pytest.raises(ValueError, match="snapshot mode"):
         snapshot(state, 80, 20, ["?"])
 

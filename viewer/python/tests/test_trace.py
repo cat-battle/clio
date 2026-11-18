@@ -128,6 +128,6 @@ def test_trace_key_in_textual_app():
             await pilot.pause()
             assert app.state.message == "revealed 4 traced items"
             assert app.state.layout.visible(app.state.graph.find("S12"))
-            assert "M2 GA release" in app.canvas.text()
+            assert "═ M2 " in app.canvas.text()
 
     asyncio.run(main())

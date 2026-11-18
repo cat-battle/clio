@@ -70,7 +70,8 @@ fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         ));
     }
-    spans.push(Span::styled(format!("  │ zoom:{} │", app.zoom.label()), dim));
+    let auto = if app.auto_fit { " (auto)" } else { "" };
+    spans.push(Span::styled(format!("  │ zoom:{}{auto} │", app.zoom.label()), dim));
     for t in app.graph.link_types() {
         if app.enabled.contains(t) {
             let c = link_color(app.graph.link_types(), t);
@@ -213,8 +214,10 @@ fn draw_relations(f: &mut Frame, app: &App, cursor: usize) {
 pub const HELP: &[(&str, &str)] = &[
     ("arrows / hjkl", "move selection (→/↓ on open box: enter)"),
     ("Shift+arrows / HJKL", "pan the camera"),
-    ("+ / -", "zoom in / out (detail level)"),
+    ("+ / -", "zoom in / out (turns auto-fit off)"),
+    ("z", "auto-fit zoom on / off"),
     ("space", "expand / collapse box in place"),
+    ("x", "close open box, or the box around it"),
     ("enter", "drill into box"),
     ("esc / backspace", "drill out"),
     ("e / E", "expand all / collapse all"),
@@ -226,6 +229,8 @@ pub const HELP: &[(&str, &str)] = &[
     ("T", "expand to show the whole trace"),
     ("/ , n", "search id/title, next match"),
     ("R", "reload data source"),
+    ("mouse", "click select · [+] / [-] or title: open/close"),
+    ("wheel", "pan (Shift+wheel: sideways)"),
     ("q", "quit"),
 ];
 

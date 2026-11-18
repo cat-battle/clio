@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use ratatui::crossterm::event::{self, Event};
+use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
+use ratatui::crossterm::execute;
 
 use clio_viewer::adapters::{FileLoader, JiraLoader, Loader};
 use clio_viewer::app::App;
@@ -66,14 +67,18 @@ fn main() -> Result<()> {
 
     let mut terminal = ratatui::init();
     let result = (|| -> Result<()> {
+        execute!(std::io::stdout(), EnableMouseCapture)?;
         while !app.should_quit {
             terminal.draw(|f| ui::draw(f, &mut app))?;
-            if let Event::Key(k) = event::read()? {
-                app.handle_key(k);
+            match event::read()? {
+                Event::Key(k) => app.handle_key(k),
+                Event::Mouse(m) => app.handle_mouse(m),
+                _ => {}
             }
         }
         Ok(())
     })();
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
     result
 }

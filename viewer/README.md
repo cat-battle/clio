@@ -13,7 +13,10 @@ that behaves like an RTL/schematic viewer:
   labelled `×N`.
 - Siblings are laid out in **layered columns** so dependencies flow left → right;
   wires are routed orthogonally around unrelated boxes.
-- **Zoom** switches between detail / compact / overview box sizes.
+- **Zoom** switches between detail / compact / overview box sizes. **Auto-fit**
+  (on by default) picks the most detailed size at which the whole view fits.
+- **Mouse:** click to select, click `[+N]` / an open box's title bar to open /
+  close, wheel to pan.
 - **Dependency tracing** (`t`) lights up everything the selected box depends on
   and everything that depends on it, and greys out the rest. This works like
   fan-in/fan-out cone tracing in an RTL viewer.
@@ -179,8 +182,10 @@ in `viewer/rust`) or `CLIO_RUST_BIN` is set.
 |---|---|
 | arrows / `hjkl` | move selection (→/↓ on an open box steps into it) |
 | Shift+arrows / `HJKL` | pan |
-| `+` / `-` | zoom in / out |
+| `+` / `-` | zoom in / out (turns auto-fit off) |
+| `z` | auto-fit zoom on / off |
 | space | expand / collapse in place |
+| `x` | close the open box, or the box around the selection (repeat to close outward) |
 | enter | drill into box |
 | esc / backspace | drill out |
 | `e` / `E` | expand all / collapse all (within the current view) |
@@ -194,3 +199,4 @@ in `viewer/rust`) or `CLIO_RUST_BIN` is set.
 | `R` | reload from the data source |
 | `?` | help |
 | `q` | quit |
+| mouse | click: select · click `[+N]` / title bar: open / close · wheel: pan (Shift: sideways) |

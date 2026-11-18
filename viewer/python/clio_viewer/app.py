@@ -43,6 +43,27 @@ class Canvas(Widget):
             self._grid = render_canvas(s.graph, s.layout, s.camera, s.selected, s.zoom, w, h, s.trace())
         return self._grid
 
+    # Mouse: click selects / opens / closes, the wheel pans.
+    def on_click(self, event: events.Click) -> None:
+        if self.state.click(event.x, event.y):
+            event.stop()
+            self.app.refresh_view()  # type: ignore[attr-defined]
+
+    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
+        self._scroll(event, down=True)
+
+    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
+        self._scroll(event, down=False)
+
+    def _scroll(self, event: events.MouseEvent, down: bool) -> None:
+        event.stop()
+        self.state.scroll(down, sideways=event.shift)
+        self.app.refresh_view()  # type: ignore[attr-defined]
+
+    def on_resize(self, event: events.Resize) -> None:
+        # Auto-fit may pick another zoom level for the new size.
+        self.app.refresh_view()  # type: ignore[attr-defined]
+
     def text(self) -> str:
         """Plain-text contents (used by tests)."""
         return "\n".join(self.grid().text_lines())
@@ -188,12 +209,17 @@ class ClioViewer(App[None]):
         return self.query_one(Canvas)
 
     def refresh_view(self) -> None:
+        canvas = self.canvas
+        if canvas.size.width and canvas.size.height:
+            # Apply auto-fit / camera moves now so the status bar shows the
+            # zoom level the canvas is about to draw.
+            self.state.set_viewport(canvas.size.width, canvas.size.height)
         details = self.query_one("#details", Static)
         details.display = self.state.show_details
         if self.state.show_details:
             details.update(details_text(self.state))
         self.query_one("#status", Static).update(status_text(self.state, self.state.trace()))
-        self.canvas.invalidate()
+        canvas.invalidate()
 
     def on_key(self, event: events.Key) -> None:
         if self.screen is not self.screen_stack[0]:

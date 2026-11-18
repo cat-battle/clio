@@ -147,13 +147,13 @@ What a closed box shows depends on the zoom level:
 ### Status bar
 
 ```
- Top › M1 │ zoom:detail │ ■ blocks □ duplicates ■ relates_to  (3 links leave this view) │ trace:both ↑2 ↓5 │ ?: help
+ Top › M1 │ zoom:detail (auto) │ ■ blocks □ duplicates ■ relates_to  (3 links leave this view) │ trace:both ↑2 ↓5 │ ?: help
 ```
 
 From left to right:
 
 1. **Breadcrumb**, shown when you have drilled into a box.
-2. **Zoom level.**
+2. **Zoom level.** `(auto)` means auto-fit is choosing it (see below).
 3. **Relationship types.** `■` means shown and `□` means hidden.
 4. **Links leaving the view**, when you have drilled in and some links connect
    to items outside the current view.
@@ -170,8 +170,10 @@ Press `?` at any time to show the key list.
 |---|---|
 | arrows / `h j k l` | Move the selection to the nearest box in that direction. →/↓ on an open box steps into its first child. |
 | Shift+arrows / `H J K L` | Pan the view without changing the selection. |
-| `+` / `-` | Zoom in / out (detail ↔ compact ↔ overview). |
+| `+` / `-` | Zoom in / out (detail ↔ compact ↔ overview). Turns auto-fit off. |
+| `z` | Turn auto-fit zoom back on (or off). |
 | space | Open / close the selected box in place. |
+| `x` | Close the selected box if it is open, otherwise the box around it. Press again to keep closing outward. |
 | enter | Drill into the selected box: it becomes the whole view. |
 | esc / backspace | Drill back out one level. |
 | `e` / `E` | Open all / close all boxes in the current view. |
@@ -183,6 +185,47 @@ Press `?` at any time to show the key list.
 | `t` / `T` | Dependency trace / show the whole trace (see section 5). |
 | `R` | Reload the data source. |
 | `q` | Quit. |
+
+### Mouse
+
+| Action | Effect |
+|---|---|
+| Click a box | Select it. Inside open boxes, the innermost box under the pointer is selected. |
+| Click `[+N]` on a closed box | Open it. |
+| Click the top border of an open box (its title or `[-]`) | Close it. |
+| Wheel | Pan up / down. |
+| Shift+wheel (or a sideways wheel) | Pan left / right. |
+
+While the viewer runs it captures the mouse, so selecting text in the terminal
+usually needs Shift held down (this varies by terminal).
+
+### Auto-fit zoom
+
+Auto-fit is on when the viewer starts. Whenever you open or close boxes, drill
+in or out, change filters, or resize the terminal, the viewer picks the **most
+detailed zoom level at which the whole view fits on screen**:
+
+- If the view fits at *detail*, it is shown at detail.
+- Otherwise it tries *compact*, then *overview*.
+- If even overview is too big, the view stays at overview. It starts from the
+  top-left, scrolls only as far as needed to keep the selection visible, and
+  you pan the rest.
+
+The status bar shows `zoom:compact (auto)` while auto-fit is in charge.
+Pressing `+` or `-` means you want a particular size, so it turns auto-fit off
+until you press `z`.
+
+### Closing boxes
+
+Pick whichever is closest to hand:
+
+- **`x`** works from anywhere inside a box. On an open box it closes that box.
+  On anything else it closes the box around the selection and selects it, so
+  pressing `x` repeatedly closes one level at a time. At the top of a
+  drilled-in view, `x` drills back out.
+- **Click** the top border of an open box.
+- **Space** on the open box itself (`p` selects the parent first).
+- **`E`** closes everything in the current view.
 
 ### Opening a box in place vs drilling in
 
@@ -273,7 +316,7 @@ The trace follows these rules:
 ### Example (sample data)
 
 1. Search for `S5` (Board UI): press `/S5` then enter.
-2. Press `-` for compact zoom, then `t`.
+2. Press `t`.
 
 Upstream are **S4** (Board API) and **S1** (Login page), which both block S5.
 Downstream are **S6**, **S7 → S8 → S9** and, through `relates_to`, **S12**.
@@ -289,7 +332,7 @@ The status bar shows `↑2 ↓5`.
 | What slips if S4 slips? | Select S4, press `t` three times (`trace:downstream`), then `T`. |
 | What is blocking this, ignoring "related" noise? | `r`, turn everything off except `blocks`, close the list, then `t`. |
 | Show me one epic in depth. | Select it, press enter, then `e` to open everything inside it. |
-| Big picture of the whole plan. | `e` (open all), then `-` twice (overview). Pan with `HJKL`. |
+| Big picture of the whole plan. | `e` (open all). Auto-fit shrinks the boxes to fit; pan with `HJKL` or the wheel if it is still too big. |
 | Paste a diagram into a ticket. | `clio-viewer --file plan.json --snapshot 140x40 --keys 'e-'` |
 
 ---
@@ -616,7 +659,8 @@ site.
 | `reload failed: …` in the status bar | The file changed and is now invalid. The previous data is still shown. Fix the file and press `R` again. |
 | A link I added has no wire | Check that its type is enabled (`r`), that it doesn't connect an item to its own parent or child, and, if you have drilled in, that both ends are inside the current view (the status bar counts links leaving the view). |
 | The trace lights up almost everything | A broad type such as `relates_to` is being followed. Turn it off with `r`. |
-| Everything is too big to see | Zoom out with `-`, drill into the part you care about with enter, or close boxes with `E`. |
+| Everything is too big to see | Drill into the part you care about with enter, or close boxes with `x` / `E`. If you zoomed by hand, press `z` to let auto-fit pick the size again. |
+| Boxes suddenly got smaller or bigger | That is auto-fit reacting to boxes opening or closing. Press `+`/`-` to pick a size yourself (turns auto-fit off), `z` to turn it back on. |
 
 The Rust messages are quoted above. The Python version prints the same checks
 with single quotes, e.g. `item 'S3' has unknown parent 'E9'`.

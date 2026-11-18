@@ -29,11 +29,13 @@ class ViewerState:
         self.layout = Layout()
         self.show_details = False
         self.trace_mode = TraceMode.OFF
+        self.auto_fit = True  # most detailed zoom at which the whole view fits
         self.message: str | None = None
         self.last_search: str | None = None
         self.should_quit = False
         self._follow_pending = True
         self._center_pending = False
+        self._fit_pending = True
         self.relayout()
 
     # ---------------------------------------------------------------- layout
@@ -43,7 +45,17 @@ class ViewerState:
         return self.drill[-1] if self.drill else None
 
     def relayout(self) -> None:
-        self.layout = compute(self.graph, self.root, self.expanded, self.zoom, self.enabled)
+        self.layout = self._layout_at(self.zoom)
+        self._fix_selection()
+        self._follow_pending = True
+        self._fit_pending = True
+
+    def _layout_at(self, zoom: Zoom) -> Layout:
+        return compute(self.graph, self.root, self.expanded, zoom, self.enabled)
+
+    def _fix_selection(self) -> None:
+        """Moves the selection to its nearest visible ancestor (or the first
+        box) when it is not visible in the current layout."""
         if self.selected is None or not self.layout.visible(self.selected):
             fallback = None
             if self.selected is not None:
@@ -51,12 +63,33 @@ class ViewerState:
             if fallback is None and self.layout.boxes:
                 fallback = self.layout.boxes[0].node
             self.selected = fallback
-        self._follow_pending = True
+
+    def _fits(self, layout: Layout) -> bool:
+        return layout.width <= self.viewport[0] and layout.height <= self.viewport[1]
+
+    def _fit(self) -> None:
+        """Auto-fit: switches to the most detailed zoom level at which the
+        whole view fits the viewport (overview if nothing fits)."""
+        old = self.zoom
+        for z in (Zoom.DETAIL, Zoom.COMPACT, Zoom.OVERVIEW):
+            layout = self.layout if z is self.zoom else self._layout_at(z)
+            if self._fits(layout) or z is Zoom.OVERVIEW:
+                self.zoom, self.layout = z, layout
+                break
+        self._fix_selection()
+        if self.zoom is not old:
+            # Start from the top-left and scroll only as far as the selection needs.
+            self.camera = (0, 0)
+            self._follow_pending = True
 
     def set_viewport(self, w: int, h: int) -> None:
         """Called with the canvas size before each frame; applies any pending
         camera adjustment."""
+        resized = (w, h) != self.viewport
         self.viewport = (w, h)
+        if self.auto_fit and (self._fit_pending or resized):
+            self._fit_pending = False
+            self._fit()
         if self._center_pending:
             self._center_pending = False
             self._follow_pending = False
@@ -64,6 +97,14 @@ class ViewerState:
         elif self._follow_pending:
             self._follow_pending = False
             self._ensure_selected_visible()
+        # With auto-fit, an axis on which the whole view fits never scrolls.
+        if self.auto_fit:
+            cx, cy = self.camera
+            if self.layout.width <= w:
+                cx = 0
+            if self.layout.height <= h:
+                cy = 0
+            self.camera = (cx, cy)
 
     def _clamp_camera(self) -> None:
         vw, vh = self.viewport
@@ -117,9 +158,13 @@ class ViewerState:
         elif key in moves:
             self.move_selection(moves[key])
         elif key in ("+", "="):
-            self.set_zoom(self.zoom.zoom_in())
+            self.manual_zoom(self.zoom.zoom_in())
         elif key in ("-", "_"):
-            self.set_zoom(self.zoom.zoom_out())
+            self.manual_zoom(self.zoom.zoom_out())
+        elif key == "z":
+            self.toggle_auto_fit()
+        elif key == "x":
+            self.close_enclosing()
         elif key in (" ", "space"):
             self.toggle_expand()
         elif key == "enter":
@@ -158,6 +203,68 @@ class ViewerState:
     def pan(self, dx: int, dy: int) -> None:
         self.camera = (self.camera[0] + dx, self.camera[1] + dy)
         self._clamp_camera()
+
+    def manual_zoom(self, z: Zoom) -> None:
+        """``+``/``-``: choosing a zoom level by hand turns auto-fit off."""
+        if self.auto_fit:
+            self.auto_fit = False
+            self.message = "auto-fit off (z turns it back on)"
+        self.set_zoom(z)
+
+    def toggle_auto_fit(self) -> None:
+        self.auto_fit = not self.auto_fit
+        self._fit_pending = self.auto_fit
+        self.message = f"auto-fit {'on' if self.auto_fit else 'off'}"
+
+    def close_enclosing(self) -> None:
+        """``x``: closes the selected box if it is open, otherwise the box
+        that contains it (selecting that box), so repeated presses close
+        outward. At the top of a drilled-in view it drills out instead."""
+        s = self.selected
+        if s is None:
+            return
+        if s in self.expanded:
+            self.expanded.discard(s)
+            self.relayout()
+            return
+        p = self.graph.parent(s)
+        if p is not None and self.layout.visible(p):
+            self.expanded.discard(p)
+            self.selected = p
+            self.relayout()
+        elif p is not None and p == self.root:
+            self.drill_out()
+        else:
+            self.message = "nothing to close"
+
+    def click(self, sx: int, sy: int) -> bool:
+        """Mouse click at canvas cell (sx, sy): selects the innermost box
+        there. Clicking an open box's top border (its title or ``[-]``)
+        closes it; clicking a closed box's ``[+N]`` tag opens it. Returns
+        False when nothing was hit."""
+        self.message = None
+        x, y = sx + self.camera[0], sy + self.camera[1]
+        hit = next((b for b in reversed(self.layout.boxes) if b.bounds.contains_point(x, y)), None)
+        if hit is None:
+            return False
+        n, r = hit.node, hit.bounds
+        self.selected = n
+        kids = len(self.graph.children(n))
+        if hit.expanded and y == r.y:
+            self.expanded.discard(n)
+            self.relayout()
+        elif not hit.expanded and kids and y == r.bottom - 1:
+            tag = 1 if self.zoom is Zoom.OVERVIEW else len(f"[+{kids}]")
+            x1 = r.right - 1
+            if x1 - tag <= x < x1:
+                self.expanded.add(n)
+                self.relayout()
+        return True
+
+    def scroll(self, down: bool, sideways: bool = False) -> None:
+        """Mouse wheel: pans vertically (sideways with Shift)."""
+        step = 1 if down else -1
+        self.pan(step * PAN_X, 0) if sideways else self.pan(0, step * PAN_Y)
 
     def set_zoom(self, z: Zoom) -> None:
         if z is not self.zoom:

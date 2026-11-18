@@ -2,7 +2,9 @@
 
 use std::collections::HashSet;
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use crate::adapters::Loader;
 use crate::layout::{self, Layout, LayoutParams, Zoom};
@@ -43,11 +45,14 @@ pub struct App {
     pub mode: Mode,
     pub show_details: bool,
     pub trace_mode: TraceMode,
+    /// Pick the most detailed zoom level at which the whole view fits.
+    pub auto_fit: bool,
     pub message: Option<String>,
     pub last_search: Option<String>,
     pub should_quit: bool,
     follow_pending: bool,
     center_pending: bool,
+    fit_pending: bool,
 }
 
 impl App {
@@ -67,11 +72,13 @@ impl App {
             mode: Mode::Normal,
             show_details: false,
             trace_mode: TraceMode::Off,
+            auto_fit: true,
             message: None,
             last_search: None,
             should_quit: false,
             follow_pending: true,
             center_pending: false,
+            fit_pending: true,
         };
         app.relayout();
         app
@@ -95,6 +102,14 @@ impl App {
                 enabled: &self.enabled,
             },
         );
+        self.fix_selection();
+        self.follow_pending = true;
+        self.fit_pending = true;
+    }
+
+    /// Moves the selection to its nearest visible ancestor (or the first box)
+    /// when it is not visible in the current layout.
+    fn fix_selection(&mut self) {
         if !self.selected.is_some_and(|s| self.layout.visible(s)) {
             self.selected = self
                 .selected
@@ -106,18 +121,76 @@ impl App {
                 })
                 .or_else(|| self.layout.boxes.first().map(|b| b.node));
         }
-        self.follow_pending = true;
+    }
+
+    fn layout_at(&self, zoom: Zoom) -> Layout {
+        layout::compute(
+            &self.graph,
+            &LayoutParams {
+                root: self.root(),
+                expanded: &self.expanded,
+                zoom,
+                enabled: &self.enabled,
+            },
+        )
+    }
+
+    fn fits(&self, l: &Layout) -> bool {
+        l.width <= self.viewport.0 && l.height <= self.viewport.1
+    }
+
+    /// Auto-fit: switches to the most detailed zoom level at which the whole
+    /// view fits the viewport (overview if nothing fits). When it fits, the
+    /// camera shows all of it (see `set_viewport`).
+    fn fit(&mut self) {
+        let old = self.zoom;
+        for z in [Zoom::Detail, Zoom::Compact, Zoom::Overview] {
+            let l = if z == self.zoom {
+                std::mem::take(&mut self.layout)
+            } else {
+                self.layout_at(z)
+            };
+            if self.fits(&l) || z == Zoom::Overview {
+                self.zoom = z;
+                self.layout = l;
+                break;
+            }
+            if z == old {
+                self.layout = l; // keep it if we break out later at old zoom
+            }
+        }
+        self.fix_selection();
+        if self.zoom != old {
+            // Start from the top-left and scroll only as far as the
+            // selection needs.
+            self.camera = (0, 0);
+            self.follow_pending = true;
+        }
     }
 
     /// Called by the UI with the canvas size before each frame; applies any
     /// pending camera adjustment.
     pub fn set_viewport(&mut self, w: u16, h: u16) {
-        self.viewport = (w as i32, h as i32);
+        let size = (w as i32, h as i32);
+        let resized = size != self.viewport;
+        self.viewport = size;
+        if self.auto_fit && (std::mem::take(&mut self.fit_pending) || resized) {
+            self.fit();
+        }
         if std::mem::take(&mut self.center_pending) {
             self.follow_pending = false;
             self.center_on_selected();
         } else if std::mem::take(&mut self.follow_pending) {
             self.ensure_selected_visible();
+        }
+        // With auto-fit, an axis on which the whole view fits never scrolls.
+        if self.auto_fit {
+            if self.layout.width <= self.viewport.0 {
+                self.camera.0 = 0;
+            }
+            if self.layout.height <= self.viewport.1 {
+                self.camera.1 = 0;
+            }
         }
     }
 
@@ -191,8 +264,10 @@ impl App {
             KeyCode::Right | KeyCode::Char('l') => self.move_selection(Dir::Right),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(Dir::Up),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(Dir::Down),
-            KeyCode::Char('+') | KeyCode::Char('=') => self.set_zoom(self.zoom.zoom_in()),
-            KeyCode::Char('-') | KeyCode::Char('_') => self.set_zoom(self.zoom.zoom_out()),
+            KeyCode::Char('+') | KeyCode::Char('=') => self.manual_zoom(self.zoom.zoom_in()),
+            KeyCode::Char('-') | KeyCode::Char('_') => self.manual_zoom(self.zoom.zoom_out()),
+            KeyCode::Char('z') => self.toggle_auto_fit(),
+            KeyCode::Char('x') => self.close_enclosing(),
             KeyCode::Char(' ') => self.toggle_expand(),
             KeyCode::Enter => self.drill_in(),
             KeyCode::Esc | KeyCode::Backspace => self.drill_out(),
@@ -282,6 +357,92 @@ impl App {
         self.camera.0 += dx;
         self.camera.1 += dy;
         self.clamp_camera();
+    }
+
+    /// `+`/`-`: choosing a zoom level by hand turns auto-fit off.
+    pub fn manual_zoom(&mut self, z: Zoom) {
+        if self.auto_fit {
+            self.auto_fit = false;
+            self.message = Some("auto-fit off (z turns it back on)".into());
+        }
+        self.set_zoom(z);
+    }
+
+    pub fn toggle_auto_fit(&mut self) {
+        self.auto_fit = !self.auto_fit;
+        self.fit_pending = self.auto_fit;
+        self.message = Some(format!("auto-fit {}", if self.auto_fit { "on" } else { "off" }));
+    }
+
+    /// `x`: closes the selected box if it is open, otherwise the box that
+    /// contains it (selecting that box), so repeated presses close outward.
+    /// At the top of a drilled-in view it drills out instead.
+    pub fn close_enclosing(&mut self) {
+        let Some(s) = self.selected else { return };
+        if self.expanded.contains(&s) {
+            self.expanded.remove(&s);
+            self.relayout();
+            return;
+        }
+        match self.graph.parent(s) {
+            Some(p) if self.layout.visible(p) => {
+                self.expanded.remove(&p);
+                self.selected = Some(p);
+                self.relayout();
+            }
+            Some(p) if self.root() == Some(p) => self.drill_out(),
+            _ => self.message = Some("nothing to close".into()),
+        }
+    }
+
+    /// Mouse input: left click (see [`App::click`]) and wheel panning
+    /// (Shift+wheel pans sideways). Ignored outside the canvas and while a
+    /// popup is open.
+    pub fn handle_mouse(&mut self, m: MouseEvent) {
+        let (sx, sy) = (m.column as i32, m.row as i32);
+        if self.mode != Mode::Normal || sx >= self.viewport.0 || sy >= self.viewport.1 {
+            return;
+        }
+        let shift = m.modifiers.contains(KeyModifiers::SHIFT);
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.message = None;
+                self.click(sx, sy);
+            }
+            MouseEventKind::ScrollUp if shift => self.pan(-PAN_X, 0),
+            MouseEventKind::ScrollDown if shift => self.pan(PAN_X, 0),
+            MouseEventKind::ScrollUp => self.pan(0, -PAN_Y),
+            MouseEventKind::ScrollDown => self.pan(0, PAN_Y),
+            MouseEventKind::ScrollLeft => self.pan(-PAN_X, 0),
+            MouseEventKind::ScrollRight => self.pan(PAN_X, 0),
+            _ => {}
+        }
+    }
+
+    /// Mouse click at canvas cell (`sx`, `sy`): selects the innermost box
+    /// there. Clicking an open box's top border (its title or `[-]`) closes
+    /// it; clicking a closed box's `[+N]` tag opens it. Returns false when
+    /// nothing was hit.
+    pub fn click(&mut self, sx: i32, sy: i32) -> bool {
+        let (x, y) = (sx + self.camera.0, sy + self.camera.1);
+        let Some(b) = self.layout.boxes.iter().rev().find(|b| b.bounds.contains_point(x, y)) else {
+            return false;
+        };
+        let (n, r, expanded) = (b.node, b.bounds, b.expanded);
+        self.selected = Some(n);
+        let kids = self.graph.children(n).len();
+        if expanded && y == r.y {
+            self.expanded.remove(&n);
+            self.relayout();
+        } else if !expanded && kids > 0 && y == r.bottom() - 1 {
+            let tag = if self.zoom == Zoom::Overview { 1 } else { format!("[+{kids}]").chars().count() as i32 };
+            let x1 = r.right() - 1;
+            if x >= x1 - tag && x < x1 {
+                self.expanded.insert(n);
+                self.relayout();
+            }
+        }
+        true
     }
 
     pub fn set_zoom(&mut self, z: Zoom) {
