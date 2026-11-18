@@ -1,58 +1,121 @@
 # Clio viewer
 
 A terminal viewer for Clio task hierarchies (**Milestone → Epic → Story → Subtask**)
-that behaves like an RTL/schematic viewer:
+that behaves like an RTL/schematic viewer. It comes in two implementations, Rust
+(ratatui) and Python (Textual), with the same features, the same keys and
+identical screens.
 
-- Each item is a **box**; open it **inline** (it grows in place and shows its
+- Each item is a **box**. Open it **inline** (it grows in place and shows its
   children as nested boxes) or **drill in** (it becomes the whole view, with a
   breadcrumb back out).
-- Relationships (`blocks`, `relates_to`, `duplicates`, … — whatever types the data
+- Relationships (`blocks`, `relates_to`, `duplicates`, …, whatever types the data
   contains) are drawn as **wires** between boxes. Each type can be toggled at runtime.
 - Wires are **lifted** like hierarchical nets: a link to something inside a
   collapsed box is drawn to that box, and parallel links merge into one wire
   labelled `×N`.
-- Siblings are laid out in **layered columns** so dependencies flow left → right;
-  wires are routed orthogonally around unrelated boxes and **never leave the box
+- Siblings are laid out in **layered columns** so dependencies flow left → right.
+  Wires are routed orthogonally around unrelated boxes and **never leave the box
   that contains both of their ends**.
 - **Zoom** switches between detail / compact / overview box sizes. **Auto-fit**
   (on by default) picks the most detailed size at which the whole view fits, then
   **stretches the layout to fill the terminal** (wider boxes, wrapped titles,
-  description previews, wider spacing) and refits on resize.
-- **Mouse:** click to select, click `[+N]` / an open box's title bar to open /
-  close, double right-click to close the open box under the pointer, wheel to pan.
+  description previews, wider spacing) and refits when the window is resized.
 - **Dependency tracing** (`t`) lights up everything the selected box depends on
-  and everything that depends on it, and greys out the rest. This works like
-  fan-in/fan-out cone tracing in an RTL viewer.
+  and everything that depends on it, and greys out the rest, like fan-in/fan-out
+  cone tracing in an RTL viewer.
+- **Mouse:** click to select, click `[+N]` / an open box's title bar to open or
+  close it, double right-click to close the open box under the pointer, wheel to pan.
+- **Colour themes:** Catppuccin Mocha (the palette clik uses, with its own
+  background and card-filled boxes) or the classic 16 terminal colours.
 
 ```
-  ╔═ M1 Beta launch ════════════════════════════════════════════[-]╗
-  ║                             ┌─────────────────────────────────────────┐
-  ║  ┏━━━━━━━━━━━━━━━━━━━━━━━━┓ │      ┏━━━━━━━━━━━━━━━━━━━━━━━━┓  ║      │ ╔════════════════════════╗
-  ║  ┃E1 · epic               ├─┘      ┃E2 · epic               ├─────┐  ┌╌▶┤M2 · milestone          ║
-  ║  ┃Auth & accounts         ├╌┐ ┌───▶┤Task board              ├╌╌╌╌┐└────▶┤GA release              ║
-  ║  ┃◐ in progress       @lee├───┘    ┃○ todo              @sam┃  ║ └╌╌╌╌╌▶┤○ todo             @dana║
-  ║  ┗━━━━━━━━━━━━━━━━━━━━[+3]┛ ╎      ┗━━━━━━━━━━━━━━━━━━━━[+3]┛  ║     ╎  ╚════════════════════[+2]╝
-  ║                             └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘
-  ╚════════════════════════════════════════════════════════════════╝
+   ╔═ M1 Beta launch ════════════════════════════════════════════════[-]╗
+   ║                               ┌───────────────────────────────────────────┐
+   ║  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓ │      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ║      │ ╔══════════════════════════╗
+   ║  ┃E1 · epic                 ┃ │      ┃E2 · epic                 ┃  ║      │ ║M2 · milestone            ║
+   ║  ┃Auth & accounts           ├─┘      ┃Task board                ┃  ║      └▶┤GA release                ║
+   ║  ┃                          ├╌┐ ┌───▶┤                          ├─────┐   ┌▶┤General availability:     ║
+   ║  ┃                          ├───┘    ┃                          ├╌╌╌╌┐└────▶┤billing and production    ║
+   ║  ┃                          ┃ ╎      ┃                          ┃  ║ └╌╌╌╌╌▶┤observability.            ║
+   ║  ┃◐ in progress         @lee┃ ╎      ┃○ todo                @sam┃  ║      ╎ ║○ todo               @dana║
+   ║  ┗━━━━━━━━━━━━━━━━━━━━━━[+3]┛ ╎      ┗━━━━━━━━━━━━━━━━━━━━━━[+3]┛  ║      ╎ ╚══════════════════════[+2]╝
+   ║                               └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘
+   ╚════════════════════════════════════════════════════════════════════╝
+ Top  │ zoom:detail (auto) │ ■ blocks ■ duplicates ■ relates_to  │ ?: help
 ```
 
 Border style shows the kind (═ milestone, ━ epic, ╭╮ story, ┌┐ subtask); border
 colour shows status (grey todo, yellow in progress, green done, red blocked).
+`[+N]` marks a closed box with N children, `[-]` an open one.
 
-Colours come from a theme. **mocha** (the default on true-colour terminals) is
-the Catppuccin Mocha palette that clik uses, including its own background, card
-fills for closed boxes and a panel-coloured status bar. **classic** uses the 16
-standard terminal colours on the terminal's own background. Choose with `--theme`, `CLIO_THEME`, or `C` while running.
+For the full user guide (reading the screen, every key, tracing, organising your
+data, exporting from a database, Jira, troubleshooting) see
+**[docs/guide.md](docs/guide.md)**.
 
-### Dependency tracing
+## Quick start
+
+The helper scripts in `scripts/` check prerequisites, build or install a viewer,
+run it and run the tests:
+
+```sh
+scripts/viewer.sh install                     # Linux / macOS: both viewers
+scripts/viewer.sh run rust                    # opens the sample plan
+scripts/viewer.sh run python --file my-plan.json
+scripts/viewer.sh test                        # both test suites
+```
+
+```powershell
+scripts\viewer.ps1 install                    # Windows, PowerShell 7
+scripts\viewer.ps1 run rust
+scripts\viewer.ps1 run python --file my-plan.json
+scripts\viewer.ps1 test
+```
+
+| Command | What it does |
+|---|---|
+| `install [rust\|python\|all] [--jira]` | Checks for `cargo` / Python 3.10+ and says how to install them if missing, builds the Rust viewer (release) and creates `python/.venv`. `--jira` builds the Rust viewer with Jira support. |
+| `run rust\|python [viewer options]` | Runs a viewer, installing it first if needed (and rebuilding the Rust viewer if its source changed, keeping `--jira` if you installed with it). Without `--file` or `--jira` it opens the sample plan. Options go straight to the viewer; relative paths resolve from your current directory. |
+| `test [rust\|python\|all]` | `cargo test`, and `pytest` including the Rust/Python parity tests. |
+
+Prerequisites: a Rust toolchain for the Rust viewer, Python 3.10+ for the Python
+viewer. `CLIO_PYTHON` picks a specific interpreter.
+
+**Windows notes:**
+- Use PowerShell 7 (`pwsh`) and Windows Terminal. The viewers detect Windows
+  Terminal and use full colour (mocha theme), and mouse support and box-drawing
+  characters work there.
+- The script suggests `winget` commands for Rust (which also needs the Visual
+  Studio C++ Build Tools) and Python.
+- If the execution policy blocks the script, run it as
+  `pwsh -ExecutionPolicy Bypass -File scripts\viewer.ps1 …` or use
+  `Unblock-File scripts\viewer.ps1`.
+- `viewer.ps1` has been reviewed but not yet run on Windows; please report problems.
+
+To build by hand instead, see [Rust implementation](#rust-implementation) and
+[Python implementation](#python-implementation) below.
+
+## Colour themes
+
+| Theme | Looks like |
+|---|---|
+| `mocha` | The Catppuccin Mocha palette that clik uses. The viewer paints its own background (mantle `#181825`), fills closed boxes like cards (surface0 `#313244`) and gives the status bar a panel colour. The Python version also switches Textual's own widgets to its `catppuccin-mocha` theme. |
+| `classic` | The 16 standard terminal colours on the terminal's own background. |
+
+The theme comes from `--theme NAME`, else `CLIO_THEME`, else **mocha** when the
+terminal has true colour (`COLORTERM=truecolor`/`24bit`, or Windows Terminal) and
+**classic** otherwise. Press `C` to switch while running. All colours live in one
+table per language (`rust/src/theme.rs`, `python/clio_viewer/theme.py`).
+
+## Dependency tracing
 
 Press `t` to trace the selected box. Press it again to cycle through
 **both → upstream → downstream → off**.
 
-- **Upstream** (teal; light cyan in classic) is everything the selection depends on, found by
-  following links backwards.
+- **Upstream** (teal; light cyan in classic) is everything the selection depends
+  on, found by following links backwards.
 - **Downstream** (pink; light magenta in classic) is everything that depends on it.
-- A box that is both upstream and downstream (a cycle) is peach (light yellow in classic).
+- A box that is both upstream and downstream (a cycle) is peach (light yellow in
+  classic).
 - The wires on the path keep their colour. Every other box and wire turns grey.
 - The trace follows the selection as you move it, so you can sweep across the
   schematic and watch each item's cone.
@@ -64,9 +127,8 @@ Rules:
   blocking chains.
 - **Containers trace their contents.** Tracing an epic follows the links of all
   its stories and subtasks.
-- **Reaching an item includes its children.** When the trace reaches an item,
-  its children are included too, because a link to an epic applies to the work
-  inside it.
+- **Reaching an item includes its children**, because a link to an epic applies
+  to the work inside it.
 - **Collapsed boxes light up for hidden items.** If a traced item is hidden
   inside a collapsed box, that box lights up instead, just as wires are lifted.
 
@@ -74,38 +136,43 @@ The status bar shows `trace:both ↑2 ↓5 (3 hidden, T shows)`, counting each
 traced item once (an epic and its stories count as one). `T` expands boxes, and
 drills out if needed, so every traced item gets its own box.
 
-## Quick start
+## Keys
 
-```sh
-scripts/viewer.sh install          # Linux / macOS
-scripts/viewer.sh run rust         # or: run python; opens the sample plan
-scripts/viewer.sh run python --file my-plan.json
-```
-
-```powershell
-scripts\viewer.ps1 install         # Windows, PowerShell 7
-scripts\viewer.ps1 run rust
-```
-
-`test` runs both test suites. See [docs/guide.md](docs/guide.md#2-getting-started) for
-prerequisites and Windows notes.
-
-## Layout of this folder
-
-| Path | What |
+| Key | Action |
 |---|---|
-| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, Jira |
-| `schema/clio-tasks.schema.json` | Canonical data format shared by every implementation |
-| `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
-| `fixtures/jira_search_sample.json` | Recorded Jira search response, used by the adapter tests |
-| `scripts/` | `viewer.sh` (Linux/macOS) and `viewer.ps1` (Windows, PowerShell 7): install, run and test both viewers |
-| `rust/` | Rust + [ratatui](https://ratatui.rs) implementation |
-| `python/` | Python + [Textual](https://textual.textualize.io) implementation |
+| arrows / `hjkl` | move selection (→/↓ on an open box steps into it) |
+| Shift+arrows / `HJKL` | pan |
+| `+` / `-` | zoom in / out (turns auto-fit off and returns to base box sizes) |
+| `z` | auto-fit zoom on / off |
+| space | expand / collapse in place |
+| `x` | close the open box, or the box around the selection (repeat to close outward); at the top of a drilled-in view, drill out |
+| enter | drill into box |
+| esc / backspace | drill out |
+| `e` / `E` | expand all / collapse all (within the current view) |
+| `p` | select parent |
+| `c` | center on selection |
+| `r` | relationship filters (space toggle, `a` all, `n` none) |
+| `d` | details panel |
+| `t` | dependency trace: both / upstream / downstream / off |
+| `T` | expand so every traced item is visible |
+| `/`, `n` | search id/title, next match |
+| `R` | reload from the data source (keeps open boxes, selection and filters) |
+| `C` | colour theme: mocha / classic |
+| `?` | help |
+| `q` | quit |
+
+| Mouse | Action |
+|---|---|
+| click | select the innermost box under the pointer |
+| click `[+N]` | open a closed box |
+| click an open box's title bar or `[-]` | close it |
+| double right-click | close the innermost open box under the pointer (on a closed box: the box around it; on empty canvas: like `x`) |
+| wheel / Shift+wheel | pan up-down / sideways |
+
+The viewer captures the mouse while it runs, so selecting text in the terminal
+usually needs Shift held down.
 
 ## Data format
-
-See [docs/guide.md](docs/guide.md#7-organising-your-data) for the full field reference,
-validation rules, data-organisation guidelines and a SQLite export example.
 
 A flat list of items with parent references, plus typed links:
 
@@ -122,58 +189,94 @@ A flat list of items with parent references, plus typed links:
 }
 ```
 
-`kind` ∈ milestone | epic | story | subtask; `status` ∈ todo | in_progress | done | blocked
-(default todo). Link `type` is free-form snake_case. Loaders reject duplicate ids,
-unknown parents or link endpoints, and parent cycles.
+`kind` ∈ milestone | epic | story | subtask; `status` ∈ todo | in_progress | done |
+blocked (default todo). Link `type` is free-form snake_case; point links from the
+prerequisite to the dependent (`A blocks B`). Loaders reject duplicate ids, unknown
+parents or link endpoints, parent cycles and unknown fields. The formal schema is
+`schema/clio-tasks.schema.json`; [docs/guide.md](docs/guide.md#7-organising-your-data)
+has the full field reference, validation rules, data-organisation guidelines and a
+SQLite schema + export script.
+
+## Layout of this folder
+
+| Path | What |
+|---|---|
+| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, Jira, troubleshooting |
+| `scripts/` | `viewer.sh` (Linux/macOS) and `viewer.ps1` (Windows, PowerShell 7): install, run and test both viewers |
+| `schema/clio-tasks.schema.json` | Canonical data format shared by both implementations |
+| `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
+| `fixtures/jira_search_sample.json` | Recorded Jira search response, used by the adapter tests |
+| `rust/` | Rust + [ratatui](https://ratatui.rs) implementation |
+| `python/` | Python + [Textual](https://textual.textualize.io) implementation |
+
+## Command-line options
+
+Both viewers take the same options:
+
+| Option | Meaning |
+|---|---|
+| `--file PATH` | load a Clio JSON file |
+| `--jira --jql QUERY` | load from Jira Cloud (see below) |
+| `--theme NAME` | `mocha` or `classic` |
+| `--snapshot WxH` | print one frame of width W and height H as text instead of running interactively |
+| `--keys SCRIPT` | with `--snapshot`: replay keys first (`<space>`, `<enter>`, `<esc>`, `<S-left>`, …) |
+| `--styles` | with `--snapshot`: also print each canvas row's cell colours after a `--- styles ---` line, as run-length `N*fg/bg/bold` tokens (the parity test compares them) |
+
+```sh
+scripts/viewer.sh run rust --snapshot 160x40 --keys '<space>t' --theme classic
+```
 
 ## Rust implementation
 
 ```sh
 cd viewer/rust
-cargo run -- --file ../fixtures/sample.json
+cargo run --release -- --file ../fixtures/sample.json
 ```
 
 ### Jira
 
-The Jira adapter calls `GET /rest/api/3/search/jql`. It maps issue types to kinds (by name, falling back to hierarchy level),
-`parent` to parent, `issuelinks` to links (using the outward name, e.g. `relates_to`),
-and status category to status. It needs the `jira` feature:
+The Jira adapter calls `GET /rest/api/3/search/jql`. It maps issue types to kinds
+(by name, falling back to hierarchy level), `parent` to parent, `issuelinks` to links
+(using the outward name, e.g. `relates_to`), and status category to status. It needs
+the `jira` cargo feature:
 
 ```sh
 export JIRA_URL=https://your-site.atlassian.net JIRA_EMAIL=you@example.com JIRA_API_TOKEN=...
-cargo run --features jira -- --jira --jql 'project = CLIO'
+cargo run --release --features jira -- --jira --jql 'project = CLIO'
 ```
 
-### Headless snapshots
-
-`--snapshot WxH` renders one frame to stdout instead of running interactively;
-`--keys` replays keystrokes first (`<space>`, `<enter>`, `<esc>`, `<S-left>`, …):
-
-```sh
-cargo run -- --file ../fixtures/sample.json --snapshot 160x40 --keys 'e-'
-```
-
-Add `--styles` to also print each canvas row's cell colours after a
-`--- styles ---` line. These are run-length `N*fg/bg/bold` tokens, and the
-parity test compares them.
+The `jira` feature uses `reqwest` with `rustls`, which builds the AWS-LC C library
+(`aws-lc-sys`). That needs a C toolchain, and on Windows possibly more (see the
+aws-lc-rs build requirements if the build fails). The Python viewer's Jira loader
+needs no build at all. Neither loader has been tried against a live Jira site yet.
 
 ### Tests
 
 ```sh
-cargo test --all-features
+cargo test              # add --all-features to include the Jira HTTP client
 ```
 
-These cover model validation, layout geometry (no sibling overlap, children inside parents,
-edge lifting, edge routing around boxes, filters, drill-in scope), dependency tracing
-(cone contents, direction and link filters, lifting onto collapsed boxes, cycles, reveal),
-Jira mapping against the recorded fixture, and UI behaviour through ratatui's `TestBackend`.
+The tests cover:
+- model validation;
+- layout geometry: no sibling overlap, children inside parents, stretch metrics;
+- edge lifting and routing: routes avoid boxes and stay inside their common
+  container;
+- filters and drill-in scope;
+- dependency tracing;
+- auto-fit and fill-the-terminal;
+- the `x` key and mouse input, including double right-click timing;
+- themes and backgrounds;
+- Jira mapping against the recorded fixture;
+- UI behaviour through ratatui's `TestBackend`.
 
 ## Python implementation
 
-Same features, same keys, and **the same frames**. Layout and rendering are a direct port
-of the Rust code. `tests/test_parity.py` checks that both viewers produce byte-identical
-snapshots, comparing both characters and cell colours, including traced views. Popups are native Textual screens: the help overlay, the relationship filters
-(a `SelectionList`) and the search prompt (an `Input`). The details panel is a docked widget.
+Same features, same keys and **the same frames**. Layout and rendering are a direct
+port of the Rust code, and `tests/test_parity.py` checks that both viewers produce
+byte-identical frames (characters and cell colours) for 25 key scripts × 4 terminal
+sizes × both themes. Popups are native Textual screens: the help overlay, the
+relationship filters (a `SelectionList`) and the search prompt (an `Input`). The
+details panel is a docked widget.
 
 ```sh
 cd viewer/python
@@ -181,13 +284,14 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 .venv/bin/clio-viewer --file ../fixtures/sample.json
 ```
 
-Jira needs no extra dependencies here (it uses the standard library's HTTP client):
+Python 3.10 or newer. Jira needs no extra dependencies here (it uses the standard
+library's HTTP client):
 
 ```sh
 .venv/bin/clio-viewer --jira --jql 'project = CLIO'   # same JIRA_* env vars as above
 ```
 
-`--snapshot WxH`, `--keys` and `--styles` work as in Rust. Only normal-mode keys are
+`--snapshot`, `--keys` and `--styles` work as in Rust. Only normal-mode keys are
 supported, because popups are interactive.
 
 ### Tests
@@ -196,33 +300,12 @@ supported, because popups are interactive.
 .venv/bin/python -m pytest
 ```
 
-The suite covers model validation, layout geometry and routing, Jira mapping and pagination
-(with a mocked HTTP client), view state, Textual UI behaviour through `Pilot`, and the Rust↔Python
-parity check. The parity check runs only when the Rust binary has been built (`cargo build`
-in `viewer/rust`) or `CLIO_RUST_BIN` is set.
+The suite covers the same areas as the Rust tests, plus:
+- Jira pagination, with a mocked HTTP client;
+- Textual UI behaviour through `Pilot`: keys, clicks and right-clicks, popups,
+  theme switching;
+- the Rust↔Python parity check.
 
-## Keys
-
-| Key | Action |
-|---|---|
-| arrows / `hjkl` | move selection (→/↓ on an open box steps into it) |
-| Shift+arrows / `HJKL` | pan |
-| `+` / `-` | zoom in / out (turns auto-fit off) |
-| `z` | auto-fit zoom on / off |
-| space | expand / collapse in place |
-| `x` | close the open box, or the box around the selection (repeat to close outward) |
-| enter | drill into box |
-| esc / backspace | drill out |
-| `e` / `E` | expand all / collapse all (within the current view) |
-| `p` | select parent |
-| `c` | center on selection |
-| `r` | relationship filters (space toggle, `a` all, `n` none) |
-| `d` | details panel |
-| `t` | dependency trace: both / upstream / downstream / off |
-| `T` | expand so every traced item is visible |
-| `/`, `n` | search id/title, next match |
-| `R` | reload from the data source |
-| `C` | colour theme: mocha / classic |
-| `?` | help |
-| `q` | quit |
-| mouse | click: select · click `[+N]` / title bar: open / close · double right-click: close the open box under the pointer · wheel: pan (Shift: sideways) |
+The parity check runs only when the Rust debug binary has been built
+(`cargo build` in `viewer/rust`, which `scripts/viewer.sh test` does for you) or
+`CLIO_RUST_BIN` points at one.

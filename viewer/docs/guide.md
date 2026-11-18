@@ -45,7 +45,7 @@ the viewer to reload.
 | Linux / macOS (bash) | Windows (PowerShell 7) | What it does |
 |---|---|---|
 | `scripts/viewer.sh install` | `scripts\viewer.ps1 install` | Checks prerequisites, builds the Rust viewer (release) and creates the Python virtual environment in `python/.venv`. `install rust` or `install python` does just one. `--jira` builds the Rust viewer with Jira support. |
-| `scripts/viewer.sh run rust` | `scripts\viewer.ps1 run rust` | Runs a viewer, installing it first if needed. With no `--file` or `--jira` it opens the sample plan. |
+| `scripts/viewer.sh run rust` | `scripts\viewer.ps1 run rust` | Runs a viewer, installing it first if needed. The Rust viewer is rebuilt if its source changed (for example after a `git pull`), with the same features as at install time. With no `--file` or `--jira` it opens the sample plan. |
 | `scripts/viewer.sh run python --file plan.json` | `scripts\viewer.ps1 run python --file plan.json` | Everything after the viewer name goes to the viewer. Relative paths are resolved from the directory you are in. |
 | `scripts/viewer.sh test` | `scripts\viewer.ps1 test` | Runs both test suites, including the Rust/Python parity tests. `test rust` or `test python` runs one. |
 

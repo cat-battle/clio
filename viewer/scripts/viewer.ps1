@@ -44,6 +44,8 @@ $VenvPython = Join-Path $VenvBin "python$Exe"
 $RustBin = Join-Path $RustDir 'target' 'release' "clio-viewer$Exe"
 $PyBin = Join-Path $VenvBin "clio-viewer$Exe"
 $Sample = Join-Path $ViewerDir 'fixtures' 'sample.json'
+# Remembers `install --jira`, so later rebuilds keep the same features.
+$FeaturesFile = Join-Path $RustDir 'target' 'release' '.clio-features'
 
 function Say([string] $Message) { Write-Host "==> $Message" -ForegroundColor Blue }
 
@@ -85,14 +87,35 @@ function Find-Python {
     Fail "Python 3.10+ not found. Install it with your package manager, or set CLIO_PYTHON."
 }
 
+function Build-Rust([switch] $Quiet) {
+    $features = if ($script:Jira) { @('--features', 'jira') } else { @() }
+    $extra = if ($Quiet) { @('--quiet') } else { @() }
+    if (-not $Quiet) {
+        Say ("Building the Rust viewer (release" + $(if ($script:Jira) { ', with Jira support' } else { '' }) + ")")
+    }
+    Push-Location $RustDir
+    try { Invoke-Checked 'cargo build' { cargo build --release @extra @features } }
+    finally { Pop-Location }
+    if ($script:Jira) { Set-Content -Path $FeaturesFile -Value 'jira' }
+    else { Remove-Item $FeaturesFile -ErrorAction SilentlyContinue }
+}
+
 function Install-Rust {
     Assert-Cargo
-    $features = if ($Jira) { @('--features', 'jira') } else { @() }
-    Say ("Building the Rust viewer (release" + $(if ($Jira) { ', with Jira support' } else { '' }) + ")")
-    Push-Location $RustDir
-    try { Invoke-Checked 'cargo build' { cargo build --release @features } }
-    finally { Pop-Location }
+    Build-Rust
     Say "Rust viewer: $RustBin"
+}
+
+# Before running: rebuild if the sources changed (a no-op otherwise), with the
+# features chosen at install time. Without cargo, run whatever is there.
+function Update-Rust {
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        if (-not (Test-Path $RustBin)) { Assert-Cargo }
+        return
+    }
+    if (-not (Test-Path $RustBin)) { Install-Rust; return }
+    if (Test-Path $FeaturesFile) { $script:Jira = $true }
+    Build-Rust -Quiet
 }
 
 function Install-Python {
@@ -123,7 +146,7 @@ function Invoke-Install {
 
 function Invoke-Run {
     switch ($Viewer) {
-        'rust' { $bin = $RustBin; if (-not (Test-Path $bin)) { Install-Rust } }
+        'rust' { $bin = $RustBin; Update-Rust }
         'python' { $bin = $PyBin; if (-not (Test-Path $bin)) { Install-Python } }
         default { Fail "run: say which viewer: 'run rust' or 'run python'" }
     }

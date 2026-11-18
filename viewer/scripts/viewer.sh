@@ -17,6 +17,8 @@ VENV="$PY_DIR/.venv"
 RUST_BIN="$RUST_DIR/target/release/clio-viewer"
 PY_BIN="$VENV/bin/clio-viewer"
 SAMPLE="$VIEWER_DIR/fixtures/sample.json"
+# Remembers `install --jira`, so later rebuilds keep the same features.
+FEATURES_FILE="$RUST_DIR/target/release/.clio-features"
 
 if [[ -t 2 ]]; then BLUE=$'\033[1;34m' RED=$'\033[1;31m' OFF=$'\033[0m'; else BLUE='' RED='' OFF=''; fi
 say() { printf '%s==>%s %s\n' "$BLUE" "$OFF" "$*" >&2; }
@@ -49,15 +51,40 @@ find_python() {
 
 # --- commands --------------------------------------------------------------
 
+build_rust() {  # build_rust [quiet]
+    local features=() note=""
+    if [[ "${JIRA:-0}" == 1 ]]; then
+        features=(--features jira)
+        note=", with Jira support"
+    fi
+    if [[ "${1:-}" == quiet ]]; then
+        (cd "$RUST_DIR" && cargo build --release --quiet ${features[@]+"${features[@]}"})
+    else
+        say "Building the Rust viewer (release$note)"
+        (cd "$RUST_DIR" && cargo build --release ${features[@]+"${features[@]}"})
+    fi
+    if [[ "${JIRA:-0}" == 1 ]]; then echo jira >"$FEATURES_FILE"; else rm -f "$FEATURES_FILE"; fi
+}
+
 install_rust() {
     need_cargo
-    local features=()
-    [[ "${JIRA:-0}" == 1 ]] && features=(--features jira)
-    local note=""
-    [[ "${JIRA:-0}" == 1 ]] && note=", with Jira support"
-    say "Building the Rust viewer (release$note)"
-    (cd "$RUST_DIR" && cargo build --release ${features[@]+"${features[@]}"})
+    build_rust
     say "Rust viewer: $RUST_BIN"
+}
+
+# Before running: rebuild if the sources changed (a no-op otherwise), with the
+# features chosen at install time. Without cargo, run whatever is there.
+refresh_rust() {
+    if ! command -v cargo >/dev/null 2>&1; then
+        [[ -x "$RUST_BIN" ]] || need_cargo
+        return
+    fi
+    if [[ ! -x "$RUST_BIN" ]]; then
+        install_rust
+        return
+    fi
+    [[ -f "$FEATURES_FILE" ]] && JIRA=1
+    build_rust quiet
 }
 
 install_python() {
@@ -98,7 +125,7 @@ cmd_run() {
     [[ "${1:-}" == "--" ]] && shift
     local bin
     case "$which" in
-        rust) bin="$RUST_BIN"; [[ -x "$bin" ]] || install_rust ;;
+        rust) bin="$RUST_BIN"; refresh_rust ;;
         python) bin="$PY_BIN"; [[ -x "$bin" ]] || install_python ;;
         *) die "run: say which viewer: 'run rust' or 'run python'" ;;
     esac
