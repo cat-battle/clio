@@ -39,15 +39,19 @@ that behaves like an RTL/schematic viewer:
 Border style shows the kind (═ milestone, ━ epic, ╭╮ story, ┌┐ subtask); border
 colour shows status (grey todo, yellow in progress, green done, red blocked).
 
+Colours come from a theme. **mocha** (the default on true-colour terminals) is
+the Catppuccin Mocha palette that clik uses. **classic** uses the 16 standard
+terminal colours. Choose with `--theme`, `CLIO_THEME`, or `C` while running.
+
 ### Dependency tracing
 
 Press `t` to trace the selected box. Press it again to cycle through
 **both → upstream → downstream → off**.
 
-- **Upstream** (light cyan) is everything the selection depends on, found by
+- **Upstream** (teal; light cyan in classic) is everything the selection depends on, found by
   following links backwards.
-- **Downstream** (light magenta) is everything that depends on it.
-- A box that is both upstream and downstream (a cycle) is light yellow.
+- **Downstream** (pink; light magenta in classic) is everything that depends on it.
+- A box that is both upstream and downstream (a cycle) is peach (light yellow in classic).
 - The wires on the path keep their colour. Every other box and wire turns grey.
 - The trace follows the selection as you move it, so you can sweep across the
   schematic and watch each item's cone.
@@ -200,6 +204,7 @@ in `viewer/rust`) or `CLIO_RUST_BIN` is set.
 | `T` | expand so every traced item is visible |
 | `/`, `n` | search id/title, next match |
 | `R` | reload from the data source |
+| `C` | colour theme: mocha / classic |
 | `?` | help |
 | `q` | quit |
 | mouse | click: select · click `[+N]` / title bar: open / close · wheel: pan (Shift: sideways) |

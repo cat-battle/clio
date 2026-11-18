@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from .adapters import FileLoader, JiraLoader, Loader
 from .keys import parse_keys
 from .model import Graph, ValidationError
 from .state import ViewerState
+from .theme import resolve as resolve_theme
 
 
 def _parse_size(spec: str) -> tuple[int, int]:
@@ -29,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--jql", metavar="QUERY", help="JQL query selecting the issues to show (with --jira)")
     p.add_argument("--snapshot", metavar="WxH", type=_parse_size, help="print one WIDTHxHEIGHT frame instead of running interactively")
     p.add_argument("--keys", metavar="SCRIPT", help='keys to replay before the snapshot, e.g. "<space>j<enter>"')
+    p.add_argument(
+        "--theme",
+        metavar="NAME",
+        help="colour theme: mocha (Catppuccin, true colour) or classic (16 colours); default: "
+        "$CLIO_THEME, else mocha if $COLORTERM says the terminal has true colour, else classic",
+    )
     p.add_argument("--styles", action="store_true", help="with --snapshot: also print per-cell styles")
     return p
 
@@ -48,7 +56,13 @@ def main(argv: list[str] | None = None) -> int:
     except ValidationError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    try:
+        theme = resolve_theme(args.theme, os.environ.get("CLIO_THEME"), os.environ.get("COLORTERM"))
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     state = ViewerState(graph, loader)
+    state.theme = theme
 
     if args.snapshot:
         from .views import snapshot_styles

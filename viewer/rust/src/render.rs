@@ -7,68 +7,29 @@ use ratatui::symbols::border;
 use ratatui::widgets::Widget;
 
 use crate::layout::{Edge, Layout, PlacedBox, Zoom, header_text};
-use crate::model::{Graph, Kind, NodeId, Status};
-use crate::trace::{Role, Trace};
-
-/// Colour of anything outside the traced cone.
-pub const DIM: Color = Color::DarkGray;
-
-pub fn role_color(r: Role) -> Option<Color> {
-    match r {
-        Role::Focus => None,
-        Role::Upstream => Some(Color::LightCyan),
-        Role::Downstream => Some(Color::LightMagenta),
-        Role::Both => Some(Color::LightYellow),
-    }
-}
-
-/// (horizontal glyph, vertical glyph, colour) per link type, by index into the
-/// graph's sorted link types.
-const LINK_PALETTE: [(&str, &str, Color); 6] = [
-    ("─", "│", Color::Red),
-    ("┄", "┆", Color::Cyan),
-    ("╌", "╎", Color::Magenta),
-    ("━", "┃", Color::Blue),
-    ("─", "│", Color::Green),
-    ("┄", "┆", Color::LightYellow),
-];
-
-fn link_style(types: &[String], kind: &str) -> (&'static str, &'static str, Color) {
-    let i = types.iter().position(|t| t == kind).unwrap_or(0);
-    LINK_PALETTE[i % LINK_PALETTE.len()]
-}
-
-pub fn link_color(types: &[String], kind: &str) -> Color {
-    link_style(types, kind).2
-}
+use crate::model::{Graph, Kind, NodeId};
+use crate::theme::Theme;
+use crate::trace::Trace;
 
 /// Stable colour names for `--styles` dumps (they match the Python port's
 /// colour strings so the two can be compared).
-pub fn color_name(c: Color) -> &'static str {
+pub fn color_name(c: Color) -> String {
     match c {
-        Color::Reset => "-",
-        Color::Red => "red",
-        Color::Cyan => "cyan",
-        Color::Magenta => "magenta",
-        Color::Blue => "blue",
-        Color::Green => "green",
-        Color::Yellow => "yellow",
-        Color::White => "white",
-        Color::Gray => "grey70",
-        Color::DarkGray => "grey50",
-        Color::LightYellow => "bright_yellow",
-        Color::LightCyan => "bright_cyan",
-        Color::LightMagenta => "bright_magenta",
-        _ => "?",
-    }
-}
-
-pub fn status_color(s: Status) -> Color {
-    match s {
-        Status::Todo => Color::Gray,
-        Status::InProgress => Color::Yellow,
-        Status::Done => Color::Green,
-        Status::Blocked => Color::Red,
+        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+        Color::Reset => "-".into(),
+        Color::Red => "red".into(),
+        Color::Cyan => "cyan".into(),
+        Color::Magenta => "magenta".into(),
+        Color::Blue => "blue".into(),
+        Color::Green => "green".into(),
+        Color::Yellow => "yellow".into(),
+        Color::White => "white".into(),
+        Color::Gray => "grey70".into(),
+        Color::DarkGray => "grey50".into(),
+        Color::LightYellow => "bright_yellow".into(),
+        Color::LightCyan => "bright_cyan".into(),
+        Color::LightMagenta => "bright_magenta".into(),
+        _ => "?".into(),
     }
 }
 
@@ -131,6 +92,7 @@ pub struct Canvas<'a> {
     pub zoom: Zoom,
     /// When tracing, boxes and edges outside the cone are dimmed.
     pub trace: Option<&'a Trace>,
+    pub theme: &'a Theme,
 }
 
 struct Pen<'b> {
@@ -216,16 +178,17 @@ impl Canvas<'_> {
         let role = self.trace.map(|t| t.role(b.node));
         let dimmed = role == Some(None);
         // Inside the trace, everything outside the cone is painted grey.
-        let paint = |s: Style| if dimmed { Style::default().fg(DIM) } else { s };
-        let mut bstyle = Style::default().fg(status_color(item.status));
-        if let Some(c) = role.flatten().and_then(role_color) {
+        let th = self.theme;
+        let paint = |s: Style| if dimmed { Style::default().fg(th.faint) } else { s };
+        let mut bstyle = Style::default().fg(th.status(item.status));
+        if let Some(c) = role.flatten().and_then(|r| th.role(r)) {
             bstyle = Style::default().fg(c).add_modifier(Modifier::BOLD);
         }
         bstyle = paint(bstyle);
         if selected {
             bstyle = Style::default()
-                .fg(Color::White)
-                .bg(Color::Blue)
+                .fg(th.selected_fg)
+                .bg(th.selected_bg)
                 .add_modifier(Modifier::BOLD);
         }
         let r = b.bounds;
@@ -251,7 +214,7 @@ impl Canvas<'_> {
         pen.put(x1, y1, set.bottom_right, bstyle);
 
         let inner = r.w - 2;
-        let bold = paint(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+        let bold = paint(Style::default().fg(th.text).add_modifier(Modifier::BOLD));
         let title_style = if selected { bstyle } else { bold };
         if b.expanded {
             let head = format!(" {} ", header_text(self.graph, b.node, self.zoom));
@@ -261,8 +224,8 @@ impl Canvas<'_> {
         }
 
         let kids = self.graph.children(b.node).len();
-        let dim = Style::default().fg(DIM);
-        let plain = paint(Style::default());
+        let dim = Style::default().fg(if dimmed { th.faint } else { th.subtle });
+        let plain = paint(Style::default().fg(th.body));
         let rows = r.h - 2; // text rows inside the border
         let w = inner.max(0) as usize;
         match self.zoom {
@@ -284,7 +247,7 @@ impl Canvas<'_> {
                     pen.text(x0 + 1, y0 + 2 + i as i32, line, inner, style);
                 }
                 let st = format!("{} {}", item.status.glyph(), item.status.label());
-                let st_style = paint(Style::default().fg(status_color(item.status)));
+                let st_style = paint(Style::default().fg(th.status(item.status)));
                 pen.text(x0 + 1, y1 - 1, &st, inner, st_style);
                 if let Some(a) = &item.assignee {
                     let used = st.chars().count() as i32 + 1;
@@ -316,13 +279,13 @@ impl Canvas<'_> {
     /// is not part of the cone.
     fn edge_color(&self, e: &Edge) -> Color {
         match self.trace {
-            Some(t) if !t.edge_traced(e.from, e.to, &e.kind) => DIM,
-            _ => link_color(self.graph.link_types(), &e.kind),
+            Some(t) if !t.edge_traced(e.from, e.to, &e.kind) => self.theme.faint,
+            _ => self.theme.link_color(self.graph.link_types(), &e.kind),
         }
     }
 
     fn draw_edge(&self, pen: &mut Pen, e: &Edge) {
-        let (h, v, _) = link_style(self.graph.link_types(), &e.kind);
+        let (h, v, _) = self.theme.link(self.graph.link_types(), &e.kind);
         let color = self.edge_color(e);
         let pts = &e.points;
         if pts.is_empty() {

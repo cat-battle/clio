@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from .render import link_color, render_canvas, role_color, status_color
+from .render import render_canvas
 from .state import ViewerState
-from .trace import Role, Trace, TraceMode
+from .trace import Trace, TraceMode
 
 HELP: list[tuple[str, str]] = [
     ("arrows / hjkl", "move selection (→/↓ on open box: enter)"),
@@ -22,6 +22,7 @@ HELP: list[tuple[str, str]] = [
     ("p", "select parent box"),
     ("c", "center on selection"),
     ("r", "relationship filters"),
+    ("C", "colour theme: mocha / classic"),
     ("d", "details panel"),
     ("t", "trace deps: both / upstream / downstream / off"),
     ("T", "expand to show the whole trace"),
@@ -35,33 +36,35 @@ HELP: list[tuple[str, str]] = [
 
 def status_text(state: ViewerState, trace: Trace | None = None) -> Text:
     g = state.graph
+    th = state.theme
+    dim = th.subtle
     t = Text()
     t.append(" Top", style="bold")
     for n in state.drill:
-        t.append(" › ", style="grey50")
+        t.append(" › ", style=dim)
         t.append(g.item(n).id, style="bold")
     auto = " (auto)" if state.auto_fit else ""
-    t.append(f"  │ zoom:{state.zoom.label}{auto} │", style="grey50")
+    t.append(f"  │ zoom:{state.zoom.label}{auto} │", style=dim)
     for lt in g.link_types:
         if lt in state.enabled:
-            t.append(f" ■ {lt}", style=link_color(g.link_types, lt))
+            t.append(f" ■ {lt}", style=th.link_color(g.link_types, lt))
         else:
-            t.append(f" □ {lt}", style="grey50")
+            t.append(f" □ {lt}", style=dim)
     if state.layout.hidden_links:
-        t.append(f"  ({state.layout.hidden_links} links leave this view)", style="grey50")
+        t.append(f"  ({state.layout.hidden_links} links leave this view)", style=dim)
     if trace is not None:
-        t.append(f"  │ trace:{state.trace_mode.label}", style="grey50")
+        t.append(f"  │ trace:{state.trace_mode.label}", style=dim)
         if state.trace_mode is not TraceMode.DOWNSTREAM:
-            t.append(f" ↑{len(Trace.outermost(g, trace.upstream))}", style=role_color(Role.UPSTREAM))
+            t.append(f" ↑{len(Trace.outermost(g, trace.upstream))}", style=th.upstream)
         if state.trace_mode is not TraceMode.UPSTREAM:
-            t.append(f" ↓{len(Trace.outermost(g, trace.downstream))}", style=role_color(Role.DOWNSTREAM))
+            t.append(f" ↓{len(Trace.outermost(g, trace.downstream))}", style=th.downstream)
         hidden = len(trace.hidden(g, state.layout))
         if hidden:
-            t.append(f" ({hidden} hidden, T shows)", style="grey50")
+            t.append(f" ({hidden} hidden, T shows)", style=dim)
     if state.message:
-        t.append(f"  │ {state.message}", style="yellow")
+        t.append(f"  │ {state.message}", style=th.accent)
     else:
-        t.append("  │ ?: help", style="grey50")
+        t.append("  │ ?: help", style=dim)
     return t
 
 
@@ -70,18 +73,20 @@ def details_text(state: ViewerState) -> Text:
     if n is None:
         return Text("nothing selected")
     g = state.graph
+    th = state.theme
+    dim = th.subtle
     it = g.item(n)
     t = Text()
     t.append(it.id, style="bold")
-    t.append(f" · {it.kind.label}\n", style="grey50")
+    t.append(f" · {it.kind.label}\n", style=dim)
     t.append(f"{it.title}\n\n")
-    t.append("Status   ", style="grey50")
-    t.append(f"{it.status.glyph} {it.status.label}\n", style=status_color(it.status))
-    t.append("Assignee ", style="grey50")
+    t.append("Status   ", style=dim)
+    t.append(f"{it.status.glyph} {it.status.label}\n", style=th.status_color(it.status))
+    t.append("Assignee ", style=dim)
     t.append(f"{it.assignee or '—'}\n")
-    t.append("Path     ", style="grey50")
+    t.append("Path     ", style=dim)
     t.append(" › ".join(g.item(p).id for p in g.path_from_root(n)) + "\n")
-    t.append("Children ", style="grey50")
+    t.append("Children ", style=dim)
     t.append(f"{len(g.children(n))}\n")
     if it.description:
         t.append(f"\n{it.description}\n")
@@ -94,7 +99,7 @@ def details_text(state: ViewerState) -> Text:
         t.append(f"\n{title}\n", style="bold")
         for l in links:
             other = g.item(l.target if l.source == n else l.source)
-            t.append(f" {l.type} {arrow} ", style=link_color(g.link_types, l.type))
+            t.append(f" {l.type} {arrow} ", style=th.link_color(g.link_types, l.type))
             t.append(f"{other.id} {other.title}\n")
     return t
 
@@ -117,7 +122,7 @@ def snapshot_styles(state: ViewerState, width: int, height: int, keys: list[str]
         state.set_viewport(width, canvas_h)
     trace = state.trace()
     grid = render_canvas(
-        state.graph, state.layout, state.camera, state.selected, state.zoom, width, canvas_h, trace
+        state.graph, state.layout, state.camera, state.selected, state.zoom, width, canvas_h, trace, state.theme
     )
     lines = grid.text_lines()
     status = status_text(state, trace).plain[:width]

@@ -64,6 +64,7 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 | `--jira --jql QUERY` | load from Jira Cloud instead (see [section 9](#9-loading-from-jira)) |
 | `--snapshot WxH` | print one screen of width W and height H as text, then exit (no interactive UI) |
 | `--keys SCRIPT` | with `--snapshot`: press these keys first, e.g. `'e-'` or `'<space>j<enter>'` |
+| `--theme NAME` | colour theme: `mocha` or `classic` (see [Colour themes](#colour-themes)) |
 | `--styles` | with `--snapshot`: also print the colour of every cell (used by tests) |
 
 `--snapshot` is useful for pasting a diagram into a chat, a ticket or a review.
@@ -98,7 +99,8 @@ The **border style** shows the item's kind:
 | `╭─╮` rounded | story |
 | `┌─┐` plain | subtask |
 
-The **border colour** shows its status:
+The **border colour** shows its status (the same colour names in both themes,
+pastel shades in mocha):
 
 | Colour | Glyph | Status |
 |---|---|---|
@@ -107,7 +109,29 @@ The **border colour** shows its status:
 | green | `●` | done |
 | red | `✖` | blocked |
 
-The **selected box** is drawn white on blue.
+The **selected box** is drawn dark on blue (classic: white on blue).
+
+### Colour themes
+
+The viewer has two colour themes:
+
+| Theme | Looks like | Needs |
+|---|---|---|
+| `mocha` | The [Catppuccin Mocha](https://catppuccin.com/palette) pastel palette, the same one clik uses | A true-colour terminal (most modern terminals) |
+| `classic` | The 16 standard terminal colours | Any terminal |
+
+The theme is chosen in this order:
+
+1. `--theme NAME`
+2. the `CLIO_THEME` environment variable
+3. otherwise **mocha** if `COLORTERM` is `truecolor` or `24bit`, and classic
+   if not.
+
+Press **`C`** to switch themes while the viewer runs.
+
+Every colour comes from one table per language (`rust/src/theme.rs`,
+`python/clio_viewer/theme.py`). Adding a theme means adding one more entry in
+each.
 
 A **closed box** shows a `[+N]` tag in its bottom-right corner when it has `N`
 children. At the overview zoom level the tag is just `+`.
@@ -196,6 +220,7 @@ Press `?` at any time to show the key list.
 | `/` then `n` | Search, then jump to the next match. |
 | `t` / `T` | Dependency trace / show the whole trace (see section 5). |
 | `R` | Reload the data source. |
+| `C` | Switch colour theme (mocha / classic). |
 | `q` | Quit. |
 
 ### Mouse
@@ -306,9 +331,12 @@ keeps showing the old data and puts the error in the status bar.
 
 Press **`t`** on any box.
 
-- **Upstream** items, which the selection depends on, turn **light cyan**.
-- **Downstream** items, which depend on the selection, turn **light magenta**.
-- Items that are both (a dependency cycle) turn **light yellow**.
+- **Upstream** items, which the selection depends on, turn **teal** (classic:
+  light cyan).
+- **Downstream** items, which depend on the selection, turn **pink** (classic:
+  light magenta).
+- Items that are both (a dependency cycle) turn **peach** (classic: light
+  yellow).
 - Every other box and wire turns grey. The wires on the traced paths keep their
   colour.
 
@@ -471,7 +499,7 @@ it if any of these are true:
 - Undirected relationships such as `relates_to` still need a `from` and a `to`.
   Pick either direction, and add each pair **only once**: repeated links are
   merged into a `×2` wire.
-- Cycles are allowed. They are shown in yellow when traced, but they usually
+- Cycles are allowed. They are highlighted when traced, but they usually
   mean a planning problem.
 
 **Status**

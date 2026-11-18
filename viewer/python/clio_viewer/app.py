@@ -15,8 +15,9 @@ from textual.widget import Widget
 from textual.widgets import Input, SelectionList, Static
 from textual.widgets.selection_list import Selection
 
-from .render import CellStyle, Grid, link_color, render_canvas
+from .render import CellStyle, Grid, render_canvas
 from .state import ViewerState
+from .theme import Theme
 from .views import HELP, details_text, status_text
 
 
@@ -40,7 +41,7 @@ class Canvas(Widget):
         if self._grid is None or (self._grid.width, self._grid.height) != (w, h):
             s = self.state
             s.set_viewport(w, h)
-            self._grid = render_canvas(s.graph, s.layout, s.camera, s.selected, s.zoom, w, h, s.trace())
+            self._grid = render_canvas(s.graph, s.layout, s.camera, s.selected, s.zoom, w, h, s.trace(), s.theme)
         return self._grid
 
     # Mouse: click selects / opens / closes, the wheel pans.
@@ -94,12 +95,16 @@ class HelpScreen(ModalScreen[None]):
     #help { width: 64; height: auto; border: round $accent; padding: 0 1; background: $surface; }
     """
 
+    def __init__(self, theme: Theme) -> None:
+        super().__init__()
+        self.clio_theme = theme
+
     def compose(self) -> ComposeResult:
         t = Text()
         for k, v in HELP:
-            t.append(f"{k:<22}", style="yellow")
+            t.append(f"{k:<22}", style=self.clio_theme.accent)
             t.append(f"{v}\n")
-        t.append("\nany key closes", style="grey50")
+        t.append("\nany key closes", style=self.clio_theme.subtle)
         yield Static(t, id="help")
 
     def on_mount(self) -> None:
@@ -136,7 +141,7 @@ class RelationsScreen(ModalScreen[None]):
         options = []
         for t in g.link_types:
             count = sum(1 for l in g.links if l.type == t)
-            label = Text.assemble((f"{t:<20}", link_color(g.link_types, t)), f"{count:>4}")
+            label = Text.assemble((f"{t:<20}", self.state.theme.link_color(g.link_types, t)), f"{count:>4}")
             options.append(Selection(label, t, t in self.state.enabled))
         with Vertical(id="relations-box"):
             if options:
@@ -228,7 +233,7 @@ class ClioViewer(App[None]):
         # Screens are pushed after this key is fully handled, so the same
         # keypress can't also trigger a binding (e.g. "r" = close) on them.
         if key == "?":
-            self.call_later(self.push_screen, HelpScreen())
+            self.call_later(self.push_screen, HelpScreen(self.state.theme))
         elif key == "r":
             self.call_later(self.push_screen, RelationsScreen(self.state), lambda _: self.refresh_view())
         elif key == "/":

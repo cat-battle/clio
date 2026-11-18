@@ -9,6 +9,7 @@ from __future__ import annotations
 from .adapters import Loader
 from .layout import Layout, Stretch, Zoom, compute, measure, tdiv
 from .model import Graph, NodeId
+from .theme import MOCHA, Theme
 from .trace import Trace, TraceMode
 
 PAN_X = 8
@@ -31,6 +32,7 @@ class ViewerState:
         self.show_details = False
         self.trace_mode = TraceMode.OFF
         self.auto_fit = True  # most detailed zoom at which the whole view fits
+        self.theme: Theme = MOCHA
         self.message: str | None = None
         self.last_search: str | None = None
         self.should_quit = False
@@ -207,6 +209,9 @@ class ViewerState:
             self.request_center()
         elif key == "R":
             self.reload()
+        elif key == "C":
+            self.theme = self.theme.next()
+            self.message = f"theme: {self.theme.name}"
         elif key == "d":
             self.show_details = not self.show_details
         elif key == "t":

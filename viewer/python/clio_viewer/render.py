@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .layout import Edge, Layout, PlacedBox, Zoom, header_text
-from .model import Graph, Kind, NodeId, Status
-from .trace import Role, Trace
+from .model import Graph, Kind, NodeId
+from .theme import MOCHA, Theme
+from .trace import Trace
 
 
 @dataclass(frozen=True)
@@ -30,51 +31,6 @@ BORDERS = {
     Kind.STORY: ("╭", "╮", "╰", "╯", "│", "─"),
     Kind.SUBTASK: ("┌", "┐", "└", "┘", "│", "─"),
 }
-
-# (horizontal glyph, vertical glyph, colour) per link type index.
-LINK_PALETTE = [
-    ("─", "│", "red"),
-    ("┄", "┆", "cyan"),
-    ("╌", "╎", "magenta"),
-    ("━", "┃", "blue"),
-    ("─", "│", "green"),
-    ("┄", "┆", "bright_yellow"),
-]
-
-STATUS_COLORS = {
-    Status.TODO: "grey70",
-    Status.IN_PROGRESS: "yellow",
-    Status.DONE: "green",
-    Status.BLOCKED: "red",
-}
-
-
-DIM = "grey50"  # anything outside the traced cone
-
-ROLE_COLORS = {
-    Role.FOCUS: None,
-    Role.UPSTREAM: "bright_cyan",
-    Role.DOWNSTREAM: "bright_magenta",
-    Role.BOTH: "bright_yellow",
-}
-
-
-def role_color(r: Role) -> str | None:
-    return ROLE_COLORS[r]
-
-
-def link_style(types: list[str], kind: str) -> tuple[str, str, str]:
-    i = types.index(kind) if kind in types else 0
-    return LINK_PALETTE[i % len(LINK_PALETTE)]
-
-
-def link_color(types: list[str], kind: str) -> str:
-    return link_style(types, kind)[2]
-
-
-def status_color(s: Status) -> str:
-    return STATUS_COLORS[s]
-
 
 def truncate(s: str, max_len: int) -> str:
     if len(s) <= max_len:
@@ -197,6 +153,7 @@ def render_canvas(
     width: int,
     height: int,
     trace: Trace | None = None,
+    theme: Theme = MOCHA,
 ) -> Grid:
     """When ``trace`` is given, boxes and edges outside the cone are dimmed."""
     grid = Grid(width, height)
@@ -205,30 +162,30 @@ def render_canvas(
     # happens to cross them, then the port marks on the borders.
     for b in layout.boxes:
         if b.expanded:
-            _draw_box(pen, graph, b, selected, zoom, trace)
+            _draw_box(pen, graph, b, selected, zoom, trace, theme)
     # Traced edges go last so they win where wires overlap.
     lit = [e for e in layout.edges if trace is None or trace.edge_traced(e.source, e.target, e.type)]
     grey = [e for e in layout.edges if trace is not None and not trace.edge_traced(e.source, e.target, e.type)]
     for e in grey + lit:
-        _draw_edge(pen, graph, e, _edge_color(graph, e, trace))
+        _draw_edge(pen, graph, e, _edge_color(graph, e, trace, theme), theme)
     for b in layout.boxes:
         if not b.expanded:
-            _draw_box(pen, graph, b, selected, zoom, trace)
+            _draw_box(pen, graph, b, selected, zoom, trace, theme)
     for e in grey + lit:
-        color = _edge_color(graph, e, trace)
+        color = _edge_color(graph, e, trace, theme)
         pen.put_fg(e.from_port[0], e.from_port[1], "├", color)
         pen.put_fg(e.to_port[0], e.to_port[1], "┤", color)
     return grid
 
 
-def _edge_color(graph: Graph, e: Edge, trace: Trace | None) -> str:
+def _edge_color(graph: Graph, e: Edge, trace: Trace | None, theme: Theme) -> str:
     if trace is not None and not trace.edge_traced(e.source, e.target, e.type):
-        return DIM
-    return link_color(graph.link_types, e.type)
+        return theme.faint
+    return theme.link_color(graph.link_types, e.type)
 
 
 def _draw_box(
-    pen: _Pen, graph: Graph, b: PlacedBox, selected: NodeId | None, zoom: Zoom, trace: Trace | None
+    pen: _Pen, graph: Graph, b: PlacedBox, selected: NodeId | None, zoom: Zoom, trace: Trace | None, th: Theme
 ) -> None:
     item = graph.item(b.node)
     tl, tr, bl, br, vert, horiz = BORDERS[item.kind]
@@ -237,12 +194,12 @@ def _draw_box(
     dimmed = trace is not None and role is None
 
     def paint(s: CellStyle) -> CellStyle:
-        return CellStyle(DIM) if dimmed else s
+        return CellStyle(th.faint) if dimmed else s
 
-    rc = role_color(role) if role is not None else None
-    bstyle = paint(CellStyle(rc, None, True) if rc else CellStyle(status_color(item.status)))
+    rc = th.role(role) if role is not None else None
+    bstyle = paint(CellStyle(rc, None, True) if rc else CellStyle(th.status_color(item.status)))
     if is_sel:
-        bstyle = CellStyle("white", "blue", True)
+        bstyle = CellStyle(th.selected_fg, th.selected_bg, True)
     r = b.bounds
     x0, y0, x1, y1 = r.x, r.y, r.right - 1, r.bottom - 1
 
@@ -261,15 +218,15 @@ def _draw_box(
     pen.put(x1, y1, br, bstyle)
 
     inner = r.w - 2
-    bold = paint(CellStyle("white", None, True))
+    bold = paint(CellStyle(th.text, None, True))
     title_style = bstyle if is_sel else bold
     if b.expanded:
         pen.text(x0 + 2, y0, f" {header_text(graph, b.node, zoom)} ", inner - 5, title_style)
         pen.text(x1 - 3, y0, "[-]", 3, bstyle)
         return
 
-    dim = CellStyle(DIM)
-    plain = paint(PLAIN_STYLE)
+    dim = CellStyle(th.faint if dimmed else th.subtle)
+    plain = paint(CellStyle(th.body))
     rows = r.h - 2  # text rows inside the border
     w = max(inner, 0)
     if zoom is Zoom.DETAIL:
@@ -286,7 +243,7 @@ def _draw_box(
         for i, line in enumerate(lines):
             pen.text(x0 + 1, y0 + 2 + i, line, inner, plain if i < title_lines else dim)
         st = f"{item.status.glyph} {item.status.label}"
-        pen.text(x0 + 1, y1 - 1, st, inner, paint(CellStyle(status_color(item.status))))
+        pen.text(x0 + 1, y1 - 1, st, inner, paint(CellStyle(th.status_color(item.status))))
         if item.assignee:
             used = len(st) + 1
             who = truncate(f"@{item.assignee}", max(inner - used, 0))
@@ -303,8 +260,8 @@ def _draw_box(
         pen.text(x1 - len(tag), y1, tag, len(tag), bstyle)
 
 
-def _draw_edge(pen: _Pen, graph: Graph, e: Edge, color: str) -> None:
-    h, v, _ = link_style(graph.link_types, e.type)
+def _draw_edge(pen: _Pen, graph: Graph, e: Edge, color: str, theme: Theme) -> None:
+    h, v, _ = theme.link(graph.link_types, e.type)
     pts = e.points
     if not pts:
         return

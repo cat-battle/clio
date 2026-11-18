@@ -4,7 +4,7 @@ import asyncio
 
 from clio_viewer.app import ClioViewer
 from clio_viewer.model import Document, Graph
-from clio_viewer.render import role_color
+from clio_viewer.theme import MOCHA
 from clio_viewer.state import ViewerState
 from clio_viewer.trace import Role, Trace, TraceMode
 from clio_viewer.views import snapshot_styles
@@ -108,12 +108,12 @@ def test_status_bar_and_key_cycle():
 def test_dimming_and_highlight_colours():
     s = ViewerState(Graph(sample_doc()))
     _, plain = snapshot_styles(s, 120, 20, [])
-    assert "grey50/-/0" not in plain.split("\n")[0] and role_color(Role.DOWNSTREAM) not in plain
+    assert MOCHA.faint not in plain and MOCHA.downstream not in plain
     _, traced = snapshot_styles(s, 120, 20, ["t"])
-    assert role_color(Role.DOWNSTREAM) in traced  # M2's border
+    assert MOCHA.downstream in traced  # M2's border
     s.reveal(s.graph.find("S11"))  # S11 only has a 'duplicates' link to S10
     _, traced = snapshot_styles(s, 160, 40, [])
-    assert "grey50" in traced and role_color(Role.UPSTREAM) not in traced
+    assert MOCHA.faint in traced and MOCHA.upstream not in traced
 
 
 def test_trace_key_in_textual_app():

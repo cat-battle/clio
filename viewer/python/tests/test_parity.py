@@ -15,6 +15,7 @@ import pytest
 from clio_viewer.keys import parse_keys
 from clio_viewer.model import Graph
 from clio_viewer.state import ViewerState
+from clio_viewer.theme import THEMES
 from clio_viewer.views import snapshot_styles
 
 from .conftest import FIXTURES, sample_doc
@@ -33,15 +34,18 @@ SCRIPTS = [
 SIZES = [(110, 30), (200, 45), (61, 17), (250, 70)]
 
 
+@pytest.mark.parametrize("theme", THEMES, ids=lambda t: t.name)
 @pytest.mark.parametrize("size", SIZES, ids=lambda s: f"{s[0]}x{s[1]}")
 @pytest.mark.parametrize("script", SCRIPTS)
-def test_frames_match_rust(script, size):
+def test_frames_match_rust(script, size, theme):
     w, h = size
     rust = subprocess.run(
-        [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", f"--keys={script}", "--styles"],
+        [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", f"--keys={script}", "--styles", "--theme", theme.name],
         check=True, capture_output=True, text=True,
     ).stdout
     rust_text, rust_styles = rust.split("--- styles ---\n")
-    text, styles = snapshot_styles(ViewerState(Graph(sample_doc())), w, h, parse_keys(script))
+    state = ViewerState(Graph(sample_doc()))
+    state.theme = theme
+    text, styles = snapshot_styles(state, w, h, parse_keys(script))
     assert text == rust_text
     assert styles == rust_styles

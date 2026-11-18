@@ -9,6 +9,7 @@ use ratatui::crossterm::event::{
 use crate::adapters::Loader;
 use crate::layout::{self, Layout, LayoutParams, Stretch, Zoom};
 use crate::model::{Graph, NodeId};
+use crate::theme::{MOCHA, Theme};
 use crate::trace::{Trace, TraceMode};
 
 const PAN_X: i32 = 8;
@@ -49,6 +50,7 @@ pub struct App {
     pub trace_mode: TraceMode,
     /// Pick the most detailed zoom level at which the whole view fits.
     pub auto_fit: bool,
+    pub theme: &'static Theme,
     pub message: Option<String>,
     pub last_search: Option<String>,
     pub should_quit: bool,
@@ -76,6 +78,7 @@ impl App {
             show_details: false,
             trace_mode: TraceMode::Off,
             auto_fit: true,
+            theme: &MOCHA,
             message: None,
             last_search: None,
             should_quit: false,
@@ -308,6 +311,10 @@ impl App {
             KeyCode::Char('c') => self.center_pending = true,
             KeyCode::Char('r') => self.mode = Mode::Relations { cursor: 0 },
             KeyCode::Char('R') => self.reload(),
+            KeyCode::Char('C') => {
+                self.theme = self.theme.next();
+                self.message = Some(format!("theme: {}", self.theme.name));
+            }
             KeyCode::Char('d') => self.show_details = !self.show_details,
             KeyCode::Char('t') => self.trace_mode = self.trace_mode.next(),
             KeyCode::Char('T') => self.reveal_trace(),

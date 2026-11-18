@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 use crate::app::{App, Mode};
-use crate::render::{Canvas, color_name, link_color, role_color, status_color};
+use crate::render::{Canvas, color_name};
 use crate::trace::{Role, Trace, TraceMode};
 
 const DETAILS_WIDTH: u16 = 42;
@@ -38,6 +38,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             selected: app.selected,
             zoom: app.zoom,
             trace: trace.as_ref(),
+            theme: app.theme,
         },
         canvas_area,
     );
@@ -45,18 +46,20 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     match &app.mode {
         Mode::Relations { cursor } => draw_relations(f, app, *cursor),
-        Mode::Help => draw_help(f),
+        Mode::Help => draw_help(f, app),
         Mode::Normal | Mode::Search { .. } => {}
     }
 }
 
 fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
-    let dim = Style::default().fg(Color::DarkGray);
+    let th = app.theme;
+    let dim = Style::default().fg(th.subtle);
+    let accent = Style::default().fg(th.accent);
     let mut spans = Vec::new();
     if let Mode::Search { query } = &app.mode {
-        spans.push(Span::styled("/", Style::default().fg(Color::Yellow)));
+        spans.push(Span::styled("/", accent));
         spans.push(Span::raw(query.clone()));
-        spans.push(Span::styled("█", Style::default().fg(Color::Yellow)));
+        spans.push(Span::styled("█", accent));
         spans.push(Span::styled("   enter: find · esc: cancel", dim));
         f.render_widget(Paragraph::new(Line::from(spans)), area);
         return;
@@ -74,7 +77,7 @@ fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
     spans.push(Span::styled(format!("  │ zoom:{}{auto} │", app.zoom.label()), dim));
     for t in app.graph.link_types() {
         if app.enabled.contains(t) {
-            let c = link_color(app.graph.link_types(), t);
+            let c = th.link_color(app.graph.link_types(), t);
             spans.push(Span::styled(format!(" ■ {t}"), Style::default().fg(c)));
         } else {
             spans.push(Span::styled(format!(" □ {t}"), dim));
@@ -89,7 +92,7 @@ fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
     if let Some(t) = trace {
         let g = &app.graph;
         spans.push(Span::styled(format!("  │ trace:{}", app.trace_mode.label()), dim));
-        let color = |r| Style::default().fg(role_color(r).unwrap_or(Color::Reset));
+        let color = |r| Style::default().fg(th.role(r).unwrap_or(Color::Reset));
         if app.trace_mode != TraceMode::Downstream {
             let n = Trace::outermost(g, &t.upstream).len();
             spans.push(Span::styled(format!(" ↑{n}"), color(Role::Upstream)));
@@ -104,7 +107,7 @@ fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
         }
     }
     match &app.message {
-        Some(m) => spans.push(Span::styled(format!("  │ {m}"), Style::default().fg(Color::Yellow))),
+        Some(m) => spans.push(Span::styled(format!("  │ {m}"), accent)),
         None => spans.push(Span::styled("  │ ?: help", dim)),
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -118,8 +121,9 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
     };
     let g = &app.graph;
     let it = g.item(n);
+    let th = app.theme;
     let bold = Style::default().add_modifier(Modifier::BOLD);
-    let dim = Style::default().fg(Color::DarkGray);
+    let dim = Style::default().fg(th.subtle);
     let mut lines = vec![
         Line::from(vec![
             Span::styled(it.id.clone(), bold),
@@ -131,7 +135,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
             Span::styled("Status   ", dim),
             Span::styled(
                 format!("{} {}", it.status.glyph(), it.status.label()),
-                Style::default().fg(status_color(it.status)),
+                Style::default().fg(th.status(it.status)),
             ),
         ]),
         Line::from(vec![
@@ -159,7 +163,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::styled(title, bold));
         for l in list.iter() {
             let other = if l.from == n { l.to } else { l.from };
-            let c = link_color(g.link_types(), &l.kind);
+            let c = th.link_color(g.link_types(), &l.kind);
             lines.push(Line::from(vec![
                 Span::styled(format!(" {} {arrow} ", l.kind), Style::default().fg(c)),
                 Span::raw(format!("{} {}", g.item(other).id, g.item(other).title)),
@@ -182,14 +186,15 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
 
 fn draw_relations(f: &mut Frame, app: &App, cursor: usize) {
     let types = app.graph.link_types();
+    let th = app.theme;
     let mut lines: Vec<Line> = Vec::new();
     if types.is_empty() {
-        lines.push(Line::styled("(no relationships in this data)", Style::default().fg(Color::DarkGray)));
+        lines.push(Line::styled("(no relationships in this data)", Style::default().fg(th.subtle)));
     }
     for (i, t) in types.iter().enumerate() {
         let on = app.enabled.contains(t);
         let count = app.graph.links().iter().filter(|l| &l.kind == t).count();
-        let mut style = Style::default().fg(link_color(types, t));
+        let mut style = Style::default().fg(th.link_color(types, t));
         if i == cursor {
             style = style.add_modifier(Modifier::REVERSED);
         }
@@ -201,7 +206,7 @@ fn draw_relations(f: &mut Frame, app: &App, cursor: usize) {
     lines.push(Line::from(""));
     lines.push(Line::styled(
         "space toggle · a all · n none · esc close",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(th.subtle),
     ));
     let area = centered(f.area(), 46, lines.len() as u16 + 2);
     f.render_widget(Clear, area);
@@ -224,6 +229,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("p", "select parent box"),
     ("c", "center on selection"),
     ("r", "relationship filters"),
+    ("C", "colour theme: mocha / classic"),
     ("d", "details panel"),
     ("t", "trace deps: both / upstream / downstream / off"),
     ("T", "expand to show the whole trace"),
@@ -234,12 +240,12 @@ pub const HELP: &[(&str, &str)] = &[
     ("q", "quit"),
 ];
 
-fn draw_help(f: &mut Frame) {
+fn draw_help(f: &mut Frame, app: &App) {
     let lines: Vec<Line> = HELP
         .iter()
         .map(|(k, v)| {
             Line::from(vec![
-                Span::styled(format!(" {k:<22}"), Style::default().fg(Color::Yellow)),
+                Span::styled(format!(" {k:<22}"), Style::default().fg(app.theme.accent)),
                 Span::raw(*v),
             ])
         })
@@ -292,7 +298,7 @@ fn style_dump(buf: &Buffer, w: u16, rows: u16) -> String {
             let blank = c.symbol() == " ";
             let tok = format!(
                 "{}/{}/{}",
-                if blank { "-" } else { color_name(c.fg) },
+                if blank { "-".to_string() } else { color_name(c.fg) },
                 color_name(c.bg),
                 u8::from(!blank && c.modifier.contains(Modifier::BOLD)),
             );

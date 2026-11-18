@@ -9,6 +9,7 @@ use clio_viewer::adapters::{FileLoader, JiraLoader, Loader};
 use clio_viewer::app::App;
 use clio_viewer::keys::parse_keys;
 use clio_viewer::model::Graph;
+use clio_viewer::theme::Theme;
 use clio_viewer::ui;
 
 /// Schematic-style TUI for Clio task hierarchies (Milestone → Epic → Story → Subtask).
@@ -35,6 +36,12 @@ struct Cli {
     #[arg(long, value_name = "SCRIPT", requires = "snapshot")]
     keys: Option<String>,
 
+    /// Colour theme: mocha (Catppuccin, true colour) or classic (16 colours).
+    /// Default: $CLIO_THEME, else mocha if $COLORTERM says the terminal has
+    /// true colour, else classic.
+    #[arg(long, value_name = "NAME")]
+    theme: Option<String>,
+
     /// With --snapshot: also print per-cell styles (for parity tests).
     #[arg(long, requires = "snapshot")]
     styles: bool,
@@ -42,6 +49,12 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let theme = Theme::resolve(
+        cli.theme.as_deref(),
+        std::env::var("CLIO_THEME").ok().as_deref(),
+        std::env::var("COLORTERM").ok().as_deref(),
+    )
+    .map_err(anyhow::Error::msg)?;
     let loader: Box<dyn Loader> = if cli.jira {
         Box::new(JiraLoader::from_env(cli.jql.clone().unwrap_or_default())?)
     } else {
@@ -52,6 +65,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("loading {}", loader.describe()))?;
     let graph = Graph::from_document(doc)?;
     let mut app = App::new(graph, Some(loader));
+    app.theme = theme;
 
     if let Some(spec) = &cli.snapshot {
         let (w, h) = parse_size(spec)?;
