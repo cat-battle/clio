@@ -15,6 +15,7 @@ test = ["pytest>=8"]
 
 [project.scripts]
 clio-viewer = "clio_viewer.__main__:main"
+clio-jira-import = "clio_viewer.jira_import:main"
 
 [tool.setuptools.packages.find]
 include = ["clio_viewer*"]

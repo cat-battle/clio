@@ -25,8 +25,8 @@ identical screens.
   cone tracing in an RTL viewer.
 - **Mouse:** click to select, click `[+N]` / an open box's title bar to open or
   close it, double right-click to close the open box under the pointer, wheel to pan.
-- **Offline:** reads one local JSON file; no network access, no Jira or other
-  service connections.
+- **Offline:** reads one local JSON file; no network access. Saved Jira search
+  results can be converted into a plan file with `clio-jira-import` (also offline).
 - **Colour themes:** Catppuccin Mocha (the palette clik uses, with its own
   background and card-filled boxes) or the classic 16 terminal colours.
 
@@ -51,7 +51,7 @@ colour shows status (grey todo, yellow in progress, green done, red blocked).
 `[+N]` marks a closed box with N children, `[-]` an open one.
 
 For the full user guide (reading the screen, every key, tracing, organising your
-data, exporting from a database, troubleshooting) see
+data, exporting from a database, importing from Jira, troubleshooting) see
 **[docs/guide.md](docs/guide.md)**.
 
 ## Quick start
@@ -203,10 +203,11 @@ SQLite schema + export script.
 
 | Path | What |
 |---|---|
-| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, troubleshooting |
+| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, importing from Jira, troubleshooting |
 | `scripts/` | `viewer.sh` (Linux/macOS) and `viewer.ps1` (Windows, PowerShell 7): install, run and test both viewers |
 | `schema/clio-tasks.schema.json` | Canonical data format shared by both implementations |
 | `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
+| `fixtures/jira_search_sample.json` | Saved Jira search response, used by the `clio-jira-import` tests |
 | `rust/` | Rust + [ratatui](https://ratatui.rs) implementation |
 | `python/` | Python + [Textual](https://textual.textualize.io) implementation |
 
@@ -275,7 +276,13 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 .venv/bin/clio-viewer --file ../fixtures/sample.json
 ```
 
-Python 3.10 or newer.
+Python 3.10 or newer. The package also installs `clio-jira-import`, an offline
+converter from saved Jira search results to a plan file (see the
+[guide](docs/guide.md#9-importing-from-jira-offline)):
+
+```sh
+.venv/bin/clio-jira-import page1.json page2.json -o plan.json
+```
 
 `--snapshot`, `--keys` and `--styles` work as in Rust. Only normal-mode keys are
 supported, because popups are interactive.
@@ -287,6 +294,8 @@ supported, because popups are interactive.
 ```
 
 The suite covers the same areas as the Rust tests, plus:
+- the Jira converter: field mapping against a saved response, page merging,
+  malformed input;
 - Textual UI behaviour through `Pilot`: keys, clicks and right-clicks, popups,
   theme switching;
 - the Rust↔Python parity check.

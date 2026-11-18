@@ -13,7 +13,8 @@ same keys, and draw identical screens.
 - [6. Everyday recipes](#6-everyday-recipes)
 - [7. Organising your data](#7-organising-your-data)
 - [8. Keeping your tasks in a database](#8-keeping-your-tasks-in-a-database)
-- [9. Troubleshooting](#9-troubleshooting)
+- [9. Importing from Jira (offline)](#9-importing-from-jira-offline)
+- [10. Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -33,8 +34,8 @@ The viewer is read-only and fully offline. It reads one local JSON file, never
 changes it, and never touches the network. You edit tasks wherever they live (the
 JSON file itself, or a database you export from, see
 [section 8](#8-keeping-your-tasks-in-a-database)) and press `R` in the viewer to
-reload. Data kept in another tool, such as an issue tracker, needs exporting to
-the JSON format first.
+reload. Data kept in another tool needs exporting to the JSON format first. For Jira
+there is an offline converter (see [section 9](#9-importing-from-jira-offline)).
 
 ---
 
@@ -694,7 +695,51 @@ the tables above. Write the two `SELECT`s so they return the expected columns:
 
 ---
 
-## 9. Troubleshooting
+## 9. Importing from Jira (offline)
+
+The viewer never connects to Jira. Instead, save the issues as JSON and convert
+them into a plan file with `clio-jira-import`. It is installed with the
+Python viewer, reads only the files you give it, and does no network I/O.
+
+```sh
+# 1. Save the issues (any way you like; for example the REST search API).
+#    Each response holds up to 100 issues: repeat with
+#    &nextPageToken=<value from the previous page> until "isLast" is true.
+curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -G \
+  --data-urlencode 'jql=project = CLIO ORDER BY rank' \
+  --data-urlencode 'fields=summary,status,issuetype,parent,assignee,issuelinks,description' \
+  --data-urlencode 'maxResults=100' \
+  https://your-company.atlassian.net/rest/api/3/search/jql > page1.json
+
+# 2. Convert (several pages are merged) and view.
+python/.venv/bin/clio-jira-import page1.json page2.json -o plan.json
+clio-viewer --file plan.json     # later: re-save, re-convert, press R
+```
+
+On Windows the converter is `python\.venv\Scripts\clio-jira-import.exe`.
+`scripts/viewer.sh install python` (or `viewer.ps1`) installs it.
+
+Each input file is either a saved search response (`{"issues": [...]}`) or a
+bare list of issues. Jira's CSV export isn't supported. The converter maps issues like this:
+
+| Clio field | Taken from Jira |
+|---|---|
+| `id` | issue key (`CLIO-42`) |
+| `kind` | Issue type name: `Milestone`/`Initiative` → milestone, `Epic` → epic, names containing "sub" → subtask. Otherwise it uses the hierarchy level: 2 or more → milestone, 1 → epic, below 0 → subtask, anything else → story. |
+| `status` | `blocked` if the status name contains "block". Otherwise the status category: Done → `done`, In Progress → `in_progress`, anything else → `todo`. |
+| `parent` | the issue's parent, **if the parent is also in the input**. Otherwise the issue becomes top-level. |
+| `links` | Issue links, in their outward direction (`CLIO-1 blocks CLIO-2`). The type name is converted to snake_case (`relates to` → `relates_to`). Links to issues outside the input are dropped. |
+| `assignee`, `description` | display name, and the description as plain text |
+
+Make the query include the parents you want to see. For example,
+`project = CLIO` gets milestones, epics and their children together. A query
+for only stories shows them all as top-level boxes. An issue that appears in
+more than one page is kept once. Control characters are replaced, and the plan is checked
+against the same rules the viewer applies before it is written.
+
+---
+
+## 10. Troubleshooting
 
 | Message | Cause and fix |
 |---|---|
