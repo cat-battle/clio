@@ -7,7 +7,7 @@ name = "clio-viewer"
 version = "0.1.0"
 description = "Schematic-style TUI for Clio task hierarchies (Textual implementation)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = ["textual>=1.0"]
 
 [project.optional-dependencies]

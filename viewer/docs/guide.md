@@ -45,7 +45,7 @@ cd viewer/rust
 cargo run --release -- --file ../fixtures/sample.json
 ```
 
-### Python (3.11 or newer)
+### Python (3.10 or newer)
 
 ```sh
 cd viewer/python
