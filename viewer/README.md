@@ -67,6 +67,7 @@ drills out if needed, so every traced item gets its own box.
 
 | Path | What |
 |---|---|
+| `docs/guide.md` | **User guide**: using the viewer, organising your data, exporting from a database, Jira |
 | `schema/clio-tasks.schema.json` | Canonical data format shared by every implementation |
 | `fixtures/sample.json` | Sample hierarchy (2 milestones, 4 epics, 12 stories, 8 subtasks, 3 link types) |
 | `fixtures/jira_search_sample.json` | Recorded Jira search response, used by the adapter tests |
@@ -74,6 +75,9 @@ drills out if needed, so every traced item gets its own box.
 | `python/` | Python + [Textual](https://textual.textualize.io) implementation |
 
 ## Data format
+
+See [docs/guide.md](docs/guide.md#7-organising-your-data) for the full field reference,
+validation rules, data-organisation guidelines and a SQLite export example.
 
 A flat list of items with parent references, plus typed links:
 
