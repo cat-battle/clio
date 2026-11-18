@@ -14,6 +14,9 @@ that behaves like an RTL/schematic viewer:
 - Siblings are laid out in **layered columns** so dependencies flow left → right;
   wires are routed orthogonally around unrelated boxes.
 - **Zoom** switches between detail / compact / overview box sizes.
+- **Dependency tracing** (`t`) lights up everything the selected box depends on
+  and everything that depends on it, and greys out the rest. This works like
+  fan-in/fan-out cone tracing in an RTL viewer.
 
 ```
   ╔═ M1 Beta launch ════════════════════════════════════════════[-]╗
@@ -29,6 +32,36 @@ that behaves like an RTL/schematic viewer:
 
 Border style shows the kind (═ milestone, ━ epic, ╭╮ story, ┌┐ subtask); border
 colour shows status (grey todo, yellow in progress, green done, red blocked).
+
+### Dependency tracing
+
+Press `t` to trace the selected box. Press it again to cycle through
+**both → upstream → downstream → off**.
+
+- **Upstream** (light cyan) is everything the selection depends on, found by
+  following links backwards.
+- **Downstream** (light magenta) is everything that depends on it.
+- A box that is both upstream and downstream (a cycle) is light yellow.
+- The wires on the path keep their colour. Every other box and wire turns grey.
+- The trace follows the selection as you move it, so you can sweep across the
+  schematic and watch each item's cone.
+
+Rules:
+
+- **Only enabled link types are followed.** Use `r` to narrow the trace.
+  `relates_to` has no real direction, so leave only `blocks` on to see true
+  blocking chains.
+- **Containers trace their contents.** Tracing an epic follows the links of all
+  its stories and subtasks.
+- **Reaching an item includes its children.** When the trace reaches an item,
+  its children are included too, because a link to an epic applies to the work
+  inside it.
+- **Collapsed boxes light up for hidden items.** If a traced item is hidden
+  inside a collapsed box, that box lights up instead, just as wires are lifted.
+
+The status bar shows `trace:both ↑2 ↓5 (3 hidden, T shows)`, counting each
+traced item once (an epic and its stories count as one). `T` expands boxes, and
+drills out if needed, so every traced item gets its own box.
 
 ## Layout of this folder
 
@@ -88,6 +121,10 @@ cargo run --features jira -- --jira --jql 'project = CLIO'
 cargo run -- --file ../fixtures/sample.json --snapshot 160x40 --keys 'e-'
 ```
 
+Add `--styles` to also print each canvas row's cell colours after a
+`--- styles ---` line. These are run-length `N*fg/bg/bold` tokens, and the
+parity test compares them.
+
 ### Tests
 
 ```sh
@@ -95,14 +132,15 @@ cargo test --all-features
 ```
 
 These cover model validation, layout geometry (no sibling overlap, children inside parents,
-edge lifting, edge routing around boxes, filters, drill-in scope), Jira mapping against the
-recorded fixture, and UI behaviour through ratatui's `TestBackend`.
+edge lifting, edge routing around boxes, filters, drill-in scope), dependency tracing
+(cone contents, direction and link filters, lifting onto collapsed boxes, cycles, reveal),
+Jira mapping against the recorded fixture, and UI behaviour through ratatui's `TestBackend`.
 
 ## Python implementation
 
 Same features, same keys, and **the same frames**. Layout and rendering are a direct port
-of the Rust code, and `tests/test_parity.py` checks that both viewers produce byte-identical
-snapshots. Popups are native Textual screens: the help overlay, the relationship filters
+of the Rust code. `tests/test_parity.py` checks that both viewers produce byte-identical
+snapshots, comparing both characters and cell colours, including traced views. Popups are native Textual screens: the help overlay, the relationship filters
 (a `SelectionList`) and the search prompt (an `Input`). The details panel is a docked widget.
 
 ```sh
@@ -117,8 +155,8 @@ Jira needs no extra dependencies here (it uses the standard library's HTTP clien
 .venv/bin/clio-viewer --jira --jql 'project = CLIO'   # same JIRA_* env vars as above
 ```
 
-`--snapshot WxH` and `--keys` work as in Rust (normal-mode keys only; popups are
-interactive).
+`--snapshot WxH`, `--keys` and `--styles` work as in Rust. Only normal-mode keys are
+supported, because popups are interactive.
 
 ### Tests
 
@@ -146,6 +184,8 @@ in `viewer/rust`) or `CLIO_RUST_BIN` is set.
 | `c` | center on selection |
 | `r` | relationship filters (space toggle, `a` all, `n` none) |
 | `d` | details panel |
+| `t` | dependency trace: both / upstream / downstream / off |
+| `T` | expand so every traced item is visible |
 | `/`, `n` | search id/title, next match |
 | `R` | reload from the data source |
 | `?` | help |

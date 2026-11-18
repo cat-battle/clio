@@ -33,6 +33,10 @@ struct Cli {
     /// Keys to replay before the snapshot, e.g. "<space>j<enter>" (see src/keys.rs).
     #[arg(long, value_name = "SCRIPT", requires = "snapshot")]
     keys: Option<String>,
+
+    /// With --snapshot: also print per-cell styles (for parity tests).
+    #[arg(long, requires = "snapshot")]
+    styles: bool,
 }
 
 fn main() -> Result<()> {
@@ -51,7 +55,12 @@ fn main() -> Result<()> {
     if let Some(spec) = &cli.snapshot {
         let (w, h) = parse_size(spec)?;
         let keys = parse_keys(cli.keys.as_deref().unwrap_or(""))?;
-        print!("{}", ui::snapshot(&mut app, w, h, &keys)?);
+        if cli.styles {
+            let (text, styles) = ui::snapshot_styles(&mut app, w, h, &keys)?;
+            print!("{text}--- styles ---\n{styles}");
+        } else {
+            print!("{}", ui::snapshot(&mut app, w, h, &keys)?);
+        }
         return Ok(());
     }
 

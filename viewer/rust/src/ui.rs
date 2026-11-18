@@ -6,12 +6,14 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::{Constraint, Layout as Split, Rect};
+use ratatui::buffer::Buffer;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 use crate::app::{App, Mode};
-use crate::render::{Canvas, link_color, status_color};
+use crate::render::{Canvas, color_name, link_color, role_color, status_color};
+use crate::trace::{Role, Trace, TraceMode};
 
 const DETAILS_WIDTH: u16 = 42;
 
@@ -27,6 +29,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     };
 
     app.set_viewport(canvas_area.width, canvas_area.height);
+    let trace = app.trace();
     f.render_widget(
         Canvas {
             graph: &app.graph,
@@ -34,10 +37,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             camera: app.camera,
             selected: app.selected,
             zoom: app.zoom,
+            trace: trace.as_ref(),
         },
         canvas_area,
     );
-    draw_status(f, app, status);
+    draw_status(f, app, trace.as_ref(), status);
 
     match &app.mode {
         Mode::Relations { cursor } => draw_relations(f, app, *cursor),
@@ -46,7 +50,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
-fn draw_status(f: &mut Frame, app: &App, area: Rect) {
+fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
     let mut spans = Vec::new();
     if let Mode::Search { query } = &app.mode {
@@ -80,6 +84,23 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
             format!("  ({} links leave this view)", app.layout.hidden_links),
             dim,
         ));
+    }
+    if let Some(t) = trace {
+        let g = &app.graph;
+        spans.push(Span::styled(format!("  │ trace:{}", app.trace_mode.label()), dim));
+        let color = |r| Style::default().fg(role_color(r).unwrap_or(Color::Reset));
+        if app.trace_mode != TraceMode::Downstream {
+            let n = Trace::outermost(g, &t.upstream).len();
+            spans.push(Span::styled(format!(" ↑{n}"), color(Role::Upstream)));
+        }
+        if app.trace_mode != TraceMode::Upstream {
+            let n = Trace::outermost(g, &t.downstream).len();
+            spans.push(Span::styled(format!(" ↓{n}"), color(Role::Downstream)));
+        }
+        let hidden = t.hidden(g, &app.layout).len();
+        if hidden > 0 {
+            spans.push(Span::styled(format!(" ({hidden} hidden, T shows)"), dim));
+        }
     }
     match &app.message {
         Some(m) => spans.push(Span::styled(format!("  │ {m}"), Style::default().fg(Color::Yellow))),
@@ -201,6 +222,8 @@ pub const HELP: &[(&str, &str)] = &[
     ("c", "center on selection"),
     ("r", "relationship filters"),
     ("d", "details panel"),
+    ("t", "trace deps: both / upstream / downstream / off"),
+    ("T", "expand to show the whole trace"),
     ("/ , n", "search id/title, next match"),
     ("R", "reload data source"),
     ("q", "quit"),
@@ -227,6 +250,17 @@ fn draw_help(f: &mut Frame) {
 /// Renders the app headlessly at `w`×`h` after replaying `keys`, returning
 /// the screen as plain text. Used by `--snapshot` and the UI tests.
 pub fn snapshot(app: &mut App, w: u16, h: u16, keys: &[KeyEvent]) -> Result<String> {
+    Ok(render_headless(app, w, h, keys)?.0)
+}
+
+/// Like [`snapshot`], plus one line per canvas row (all rows but the status
+/// bar) describing cell styles as run-length `N*fg/bg/b` tokens. Blank cells
+/// only report their background.
+pub fn snapshot_styles(app: &mut App, w: u16, h: u16, keys: &[KeyEvent]) -> Result<(String, String)> {
+    render_headless(app, w, h, keys)
+}
+
+fn render_headless(app: &mut App, w: u16, h: u16, keys: &[KeyEvent]) -> Result<(String, String)> {
     let mut terminal = Terminal::new(TestBackend::new(w, h))?;
     terminal.draw(|f| draw(f, app))?;
     for &k in keys {
@@ -241,5 +275,30 @@ pub fn snapshot(app: &mut App, w: u16, h: u16, keys: &[KeyEvent]) -> Result<Stri
         }
         out.push('\n');
     }
-    Ok(out)
+    Ok((out, style_dump(buf, w, h.saturating_sub(1))))
+}
+
+fn style_dump(buf: &Buffer, w: u16, rows: u16) -> String {
+    let mut out = String::new();
+    for y in 0..rows {
+        let mut runs: Vec<(String, usize)> = Vec::new();
+        for x in 0..w {
+            let Some(c) = buf.cell((x, y)) else { continue };
+            let blank = c.symbol() == " ";
+            let tok = format!(
+                "{}/{}/{}",
+                if blank { "-" } else { color_name(c.fg) },
+                color_name(c.bg),
+                u8::from(!blank && c.modifier.contains(Modifier::BOLD)),
+            );
+            match runs.last_mut() {
+                Some((t, n)) if *t == tok => *n += 1,
+                _ => runs.push((tok, 1)),
+            }
+        }
+        let line: Vec<String> = runs.iter().map(|(t, n)| format!("{n}*{t}")).collect();
+        out.push_str(&line.join(" "));
+        out.push('\n');
+    }
+    out
 }

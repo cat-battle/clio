@@ -7,4 +7,5 @@ pub mod keys;
 pub mod layout;
 pub mod model;
 pub mod render;
+pub mod trace;
 pub mod ui;

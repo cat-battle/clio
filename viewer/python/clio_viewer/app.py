@@ -40,7 +40,7 @@ class Canvas(Widget):
         if self._grid is None or (self._grid.width, self._grid.height) != (w, h):
             s = self.state
             s.set_viewport(w, h)
-            self._grid = render_canvas(s.graph, s.layout, s.camera, s.selected, s.zoom, w, h)
+            self._grid = render_canvas(s.graph, s.layout, s.camera, s.selected, s.zoom, w, h, s.trace())
         return self._grid
 
     def text(self) -> str:
@@ -192,7 +192,7 @@ class ClioViewer(App[None]):
         details.display = self.state.show_details
         if self.state.show_details:
             details.update(details_text(self.state))
-        self.query_one("#status", Static).update(status_text(self.state))
+        self.query_one("#status", Static).update(status_text(self.state, self.state.trace()))
         self.canvas.invalidate()
 
     def on_key(self, event: events.Key) -> None:

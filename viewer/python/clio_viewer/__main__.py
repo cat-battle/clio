@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--jql", metavar="QUERY", help="JQL query selecting the issues to show (with --jira)")
     p.add_argument("--snapshot", metavar="WxH", type=_parse_size, help="print one WIDTHxHEIGHT frame instead of running interactively")
     p.add_argument("--keys", metavar="SCRIPT", help='keys to replay before the snapshot, e.g. "<space>j<enter>"')
+    p.add_argument("--styles", action="store_true", help="with --snapshot: also print per-cell styles")
     return p
 
 
@@ -39,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--jira requires --jql")
     if args.keys and not args.snapshot:
         parser.error("--keys requires --snapshot")
+    if args.styles and not args.snapshot:
+        parser.error("--styles requires --snapshot")
     try:
         loader: Loader = JiraLoader.from_env(args.jql) if args.jira else FileLoader(args.file)
         graph = Graph(loader.load())
@@ -48,11 +51,12 @@ def main(argv: list[str] | None = None) -> int:
     state = ViewerState(graph, loader)
 
     if args.snapshot:
-        from .views import snapshot
+        from .views import snapshot_styles
 
         try:
             keys = parse_keys(args.keys or "")
-            sys.stdout.write(snapshot(state, *args.snapshot, keys))
+            text, styles = snapshot_styles(state, *args.snapshot, keys)
+            sys.stdout.write(text + (f"--- styles ---\n{styles}" if args.styles else ""))
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
             return 1

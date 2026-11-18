@@ -9,6 +9,7 @@ from __future__ import annotations
 from .adapters import Loader
 from .layout import Layout, Zoom, compute, tdiv
 from .model import Graph, NodeId
+from .trace import Trace, TraceMode
 
 PAN_X = 8
 PAN_Y = 4
@@ -27,6 +28,7 @@ class ViewerState:
         self.viewport = (80, 24)
         self.layout = Layout()
         self.show_details = False
+        self.trace_mode = TraceMode.OFF
         self.message: str | None = None
         self.last_search: str | None = None
         self.should_quit = False
@@ -136,6 +138,10 @@ class ViewerState:
             self.reload()
         elif key == "d":
             self.show_details = not self.show_details
+        elif key == "t":
+            self.trace_mode = self.trace_mode.next()
+        elif key == "T":
+            self.reveal_trace()
         elif key == "n":
             if self.last_search:
                 self.search(self.last_search)
@@ -272,6 +278,38 @@ class ViewerState:
         self.selected = n
         self.relayout()
         self._center_pending = True
+
+    def trace(self) -> Trace | None:
+        """The dependency cone of the selection, when tracing is on."""
+        if self.trace_mode is TraceMode.OFF or self.selected is None:
+            return None
+        return Trace.compute(self.graph, self.layout, self.selected, self.trace_mode, self.enabled)
+
+    def reveal_trace(self) -> None:
+        """Expands (and drills out) just enough to give every traced item its
+        own box."""
+        if self.trace_mode is TraceMode.OFF:
+            self.trace_mode = TraceMode.BOTH
+        t = self.trace()
+        if t is None:
+            return
+        hidden = t.hidden(self.graph, self.layout)
+        if not hidden:
+            self.message = "whole trace already visible"
+            return
+        g = self.graph
+        members = Trace.outermost(g, t.upstream) + Trace.outermost(g, t.downstream)
+        if self.selected is not None:
+            members.append(self.selected)
+        while self.drill and not all(g.is_ancestor(self.drill[-1], n) for n in members):
+            self.drill.pop()
+        for n in members:
+            for a in g.ancestors(n):
+                if a == self.root:
+                    break
+                self.expanded.add(a)
+        self.relayout()
+        self.message = f"revealed {len(hidden)} traced items"
 
     def reload(self) -> None:
         """Re-reads the data source, keeping expansion, drill path, selection

@@ -8,6 +8,19 @@ use ratatui::widgets::Widget;
 
 use crate::layout::{Edge, Layout, PlacedBox, Zoom, header_text};
 use crate::model::{Graph, Kind, NodeId, Status};
+use crate::trace::{Role, Trace};
+
+/// Colour of anything outside the traced cone.
+pub const DIM: Color = Color::DarkGray;
+
+pub fn role_color(r: Role) -> Option<Color> {
+    match r {
+        Role::Focus => None,
+        Role::Upstream => Some(Color::LightCyan),
+        Role::Downstream => Some(Color::LightMagenta),
+        Role::Both => Some(Color::LightYellow),
+    }
+}
 
 /// (horizontal glyph, vertical glyph, colour) per link type, by index into the
 /// graph's sorted link types.
@@ -27,6 +40,27 @@ fn link_style(types: &[String], kind: &str) -> (&'static str, &'static str, Colo
 
 pub fn link_color(types: &[String], kind: &str) -> Color {
     link_style(types, kind).2
+}
+
+/// Stable colour names for `--styles` dumps (they match the Python port's
+/// colour strings so the two can be compared).
+pub fn color_name(c: Color) -> &'static str {
+    match c {
+        Color::Reset => "-",
+        Color::Red => "red",
+        Color::Cyan => "cyan",
+        Color::Magenta => "magenta",
+        Color::Blue => "blue",
+        Color::Green => "green",
+        Color::Yellow => "yellow",
+        Color::White => "white",
+        Color::Gray => "grey70",
+        Color::DarkGray => "grey50",
+        Color::LightYellow => "bright_yellow",
+        Color::LightCyan => "bright_cyan",
+        Color::LightMagenta => "bright_magenta",
+        _ => "?",
+    }
 }
 
 pub fn status_color(s: Status) -> Color {
@@ -56,6 +90,8 @@ pub struct Canvas<'a> {
     pub camera: (i32, i32),
     pub selected: Option<NodeId>,
     pub zoom: Zoom,
+    /// When tracing, boxes and edges outside the cone are dimmed.
+    pub trace: Option<&'a Trace>,
 }
 
 struct Pen<'b> {
@@ -77,6 +113,7 @@ impl Pen<'_> {
 
     fn put(&mut self, x: i32, y: i32, sym: &str, style: Style) {
         if let Some(c) = self.cell(x, y) {
+            c.reset();
             c.set_symbol(sym).set_style(style);
         }
     }
@@ -137,7 +174,15 @@ impl Canvas<'_> {
             Kind::Subtask => border::PLAIN,
         };
         let selected = self.selected == Some(b.node);
+        let role = self.trace.map(|t| t.role(b.node));
+        let dimmed = role == Some(None);
+        // Inside the trace, everything outside the cone is painted grey.
+        let paint = |s: Style| if dimmed { Style::default().fg(DIM) } else { s };
         let mut bstyle = Style::default().fg(status_color(item.status));
+        if let Some(c) = role.flatten().and_then(role_color) {
+            bstyle = Style::default().fg(c).add_modifier(Modifier::BOLD);
+        }
+        bstyle = paint(bstyle);
         if selected {
             bstyle = Style::default()
                 .fg(Color::White)
@@ -167,7 +212,7 @@ impl Canvas<'_> {
         pen.put(x1, y1, set.bottom_right, bstyle);
 
         let inner = r.w - 2;
-        let bold = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+        let bold = paint(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
         let title_style = if selected { bstyle } else { bold };
         if b.expanded {
             let head = format!(" {} ", header_text(self.graph, b.node, self.zoom));
@@ -177,7 +222,8 @@ impl Canvas<'_> {
         }
 
         let kids = self.graph.children(b.node).len();
-        let dim = Style::default().fg(Color::DarkGray);
+        let dim = Style::default().fg(DIM);
+        let plain = paint(Style::default());
         match self.zoom {
             Zoom::Detail => {
                 let id = truncate(&item.id, inner as usize - 1);
@@ -185,9 +231,9 @@ impl Canvas<'_> {
                 let kind = format!(" · {}", item.kind.label());
                 let used = id.chars().count() as i32;
                 pen.text(x0 + 1 + used, y0 + 1, &kind, inner - used, dim);
-                pen.text(x0 + 1, y0 + 2, &truncate(&item.title, inner as usize), inner, Style::default());
+                pen.text(x0 + 1, y0 + 2, &truncate(&item.title, inner as usize), inner, plain);
                 let st = format!("{} {}", item.status.glyph(), item.status.label());
-                let st_style = Style::default().fg(status_color(item.status));
+                let st_style = paint(Style::default().fg(status_color(item.status)));
                 pen.text(x0 + 1, y0 + 3, &st, inner, st_style);
                 if let Some(a) = &item.assignee {
                     let used = st.chars().count() as i32 + 1;
@@ -213,8 +259,18 @@ impl Canvas<'_> {
         }
     }
 
+    /// Colour of an edge: its link type's, or grey when tracing and the edge
+    /// is not part of the cone.
+    fn edge_color(&self, e: &Edge) -> Color {
+        match self.trace {
+            Some(t) if !t.edge_traced(e.from, e.to, &e.kind) => DIM,
+            _ => link_color(self.graph.link_types(), &e.kind),
+        }
+    }
+
     fn draw_edge(&self, pen: &mut Pen, e: &Edge) {
-        let (h, v, color) = link_style(self.graph.link_types(), &e.kind);
+        let (h, v, _) = link_style(self.graph.link_types(), &e.kind);
+        let color = self.edge_color(e);
         let pts = &e.points;
         if pts.is_empty() {
             return;
@@ -267,14 +323,20 @@ impl Widget for Canvas<'_> {
         for b in self.layout.boxes.iter().filter(|b| b.expanded) {
             self.draw_box(&mut pen, b);
         }
-        for e in &self.layout.edges {
+        // Traced edges go last so they win where wires overlap.
+        let (lit, grey): (Vec<&Edge>, Vec<&Edge>) = self
+            .layout
+            .edges
+            .iter()
+            .partition(|e| self.trace.is_none_or(|t| t.edge_traced(e.from, e.to, &e.kind)));
+        for &e in grey.iter().chain(&lit) {
             self.draw_edge(&mut pen, e);
         }
         for b in self.layout.boxes.iter().filter(|b| !b.expanded) {
             self.draw_box(&mut pen, b);
         }
-        for e in &self.layout.edges {
-            let color = link_color(self.graph.link_types(), &e.kind);
+        for &e in grey.iter().chain(&lit) {
+            let color = self.edge_color(e);
             pen.put_fg(e.from_port.0, e.from_port.1, "├", color);
             pen.put_fg(e.to_port.0, e.to_port.1, "┤", color);
         }

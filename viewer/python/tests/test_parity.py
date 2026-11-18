@@ -1,5 +1,6 @@
 """Cross-implementation check: the Python viewer must render exactly the
-same frame as the Rust viewer for the same data, size and keys.
+same frame (characters and canvas cell styles) as the Rust viewer for the
+same data, size and keys.
 
 Uses the Rust binary from ``CLIO_RUST_BIN`` or ``viewer/rust/target/debug``;
 skipped when it has not been built.
@@ -14,7 +15,7 @@ import pytest
 from clio_viewer.keys import parse_keys
 from clio_viewer.model import Graph
 from clio_viewer.state import ViewerState
-from clio_viewer.views import snapshot
+from clio_viewer.views import snapshot_styles
 
 from .conftest import FIXTURES, sample_doc
 
@@ -22,7 +23,11 @@ RUST_BIN = Path(os.environ.get("CLIO_RUST_BIN", FIXTURES.parent / "rust" / "targ
 
 pytestmark = pytest.mark.skipif(not RUST_BIN.exists(), reason=f"Rust viewer not built ({RUST_BIN})")
 
-SCRIPTS = ["", "<space>", "e", "e-", "e--", "<enter>l<enter>", "e<space>jjl", "eLLJ", "<space>ll<space>-", "e<enter>pE"]
+SCRIPTS = [
+    "", "<space>", "e", "e-", "e--", "<enter>l<enter>", "e<space>jjl", "eLLJ", "<space>ll<space>-", "e<enter>pE",
+    # dependency tracing: both / upstream / downstream, lifted, revealed, drilled
+    "t", "e-t", "e-jjlt", "et-jjltt", "et-jjlttt", "<space>lltT", "<space>ll<enter>jT", "e-lllttttt",
+]
 SIZES = [(110, 30), (200, 45), (61, 17)]
 
 
@@ -31,8 +36,10 @@ SIZES = [(110, 30), (200, 45), (61, 17)]
 def test_frames_match_rust(script, size):
     w, h = size
     rust = subprocess.run(
-        [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", "--keys", script],
+        [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", "--keys", script, "--styles"],
         check=True, capture_output=True, text=True,
     ).stdout
-    python = snapshot(ViewerState(Graph(sample_doc())), w, h, parse_keys(script))
-    assert python == rust
+    rust_text, rust_styles = rust.split("--- styles ---\n")
+    text, styles = snapshot_styles(ViewerState(Graph(sample_doc())), w, h, parse_keys(script))
+    assert text == rust_text
+    assert styles == rust_styles

@@ -7,6 +7,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crate::adapters::Loader;
 use crate::layout::{self, Layout, LayoutParams, Zoom};
 use crate::model::{Graph, NodeId};
+use crate::trace::{Trace, TraceMode};
 
 const PAN_X: i32 = 8;
 const PAN_Y: i32 = 4;
@@ -41,6 +42,7 @@ pub struct App {
     pub layout: Layout,
     pub mode: Mode,
     pub show_details: bool,
+    pub trace_mode: TraceMode,
     pub message: Option<String>,
     pub last_search: Option<String>,
     pub should_quit: bool,
@@ -64,6 +66,7 @@ impl App {
             layout: Layout::default(),
             mode: Mode::Normal,
             show_details: false,
+            trace_mode: TraceMode::Off,
             message: None,
             last_search: None,
             should_quit: false,
@@ -200,6 +203,8 @@ impl App {
             KeyCode::Char('r') => self.mode = Mode::Relations { cursor: 0 },
             KeyCode::Char('R') => self.reload(),
             KeyCode::Char('d') => self.show_details = !self.show_details,
+            KeyCode::Char('t') => self.trace_mode = self.trace_mode.next(),
+            KeyCode::Char('T') => self.reveal_trace(),
             KeyCode::Char('/') => {
                 self.mode = Mode::Search {
                     query: String::new(),
@@ -438,6 +443,50 @@ impl App {
         self.selected = Some(n);
         self.relayout();
         self.center_pending = true;
+    }
+
+    /// The dependency cone of the selection, when tracing is on.
+    pub fn trace(&self) -> Option<Trace> {
+        if self.trace_mode == TraceMode::Off {
+            return None;
+        }
+        let s = self.selected?;
+        Some(Trace::compute(&self.graph, &self.layout, s, self.trace_mode, &self.enabled))
+    }
+
+    /// Expands (and drills out) just enough to give every traced item its own
+    /// box.
+    pub fn reveal_trace(&mut self) {
+        if self.trace_mode == TraceMode::Off {
+            self.trace_mode = TraceMode::Both;
+        }
+        let Some(t) = self.trace() else { return };
+        let hidden = t.hidden(&self.graph, &self.layout);
+        if hidden.is_empty() {
+            self.message = Some("whole trace already visible".into());
+            return;
+        }
+        let g = &self.graph;
+        let mut members = Trace::outermost(g, &t.upstream);
+        members.extend(Trace::outermost(g, &t.downstream));
+        members.extend(self.selected);
+        while let Some(r) = self.root() {
+            if members.iter().all(|&n| g.is_ancestor(r, n)) {
+                break;
+            }
+            self.drill.pop();
+        }
+        let root = self.root();
+        for &n in &members {
+            for a in g.ancestors(n) {
+                if Some(a) == root {
+                    break;
+                }
+                self.expanded.insert(a);
+            }
+        }
+        self.relayout();
+        self.message = Some(format!("revealed {} traced items", hidden.len()));
     }
 
     /// Re-reads the data source, keeping expansion, drill path, selection and
