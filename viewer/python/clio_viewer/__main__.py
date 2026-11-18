@@ -69,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.snapshot:
         from .views import snapshot_styles
 
+        # Box-drawing characters: a piped stdout on Windows defaults to cp1252.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+
         try:
             keys = parse_keys(args.keys or "")
             text, styles = snapshot_styles(state, *args.snapshot, keys)

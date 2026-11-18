@@ -43,7 +43,7 @@ def test_frames_match_rust(script, size, theme):
     w, h = size
     rust = subprocess.run(
         [str(RUST_BIN), "--file", str(FIXTURES / "sample.json"), "--snapshot", f"{w}x{h}", f"--keys={script}", "--styles", "--theme", theme.name],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding="utf-8",
     ).stdout
     rust_text, rust_styles = rust.split("--- styles ---\n")
     state = ViewerState(Graph(sample_doc()))
