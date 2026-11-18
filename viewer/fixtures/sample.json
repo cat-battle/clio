@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "items": [
+    { "id": "M1", "kind": "milestone", "title": "Beta launch", "status": "in_progress", "assignee": "dana", "description": "First public beta: accounts plus the core task board." },
+    { "id": "M2", "kind": "milestone", "title": "GA release", "status": "todo", "assignee": "dana", "description": "General availability: billing and production observability." },
+
+    { "id": "E1", "kind": "epic", "title": "Auth & accounts", "status": "in_progress", "parent": "M1", "assignee": "lee" },
+    { "id": "E2", "kind": "epic", "title": "Task board", "status": "todo", "parent": "M1", "assignee": "sam" },
+    { "id": "E3", "kind": "epic", "title": "Billing", "status": "todo", "parent": "M2", "assignee": "kim" },
+    { "id": "E4", "kind": "epic", "title": "Observability", "status": "blocked", "parent": "M2", "assignee": "ray", "description": "Waiting on the metrics vendor contract." },
+
+    { "id": "S1", "kind": "story", "title": "Login page", "status": "done", "parent": "E1", "assignee": "lee" },
+    { "id": "S2", "kind": "story", "title": "OAuth providers", "status": "in_progress", "parent": "E1", "assignee": "ana" },
+    { "id": "S3", "kind": "story", "title": "Password reset", "status": "todo", "parent": "E1", "assignee": "lee" },
+    { "id": "S4", "kind": "story", "title": "Board API", "status": "in_progress", "parent": "E2", "assignee": "sam" },
+    { "id": "S5", "kind": "story", "title": "Board UI", "status": "todo", "parent": "E2", "assignee": "jo" },
+    { "id": "S6", "kind": "story", "title": "Drag & drop", "status": "todo", "parent": "E2", "assignee": "jo" },
+    { "id": "S7", "kind": "story", "title": "Plans & pricing", "status": "todo", "parent": "E3", "assignee": "kim" },
+    { "id": "S8", "kind": "story", "title": "Stripe integration", "status": "todo", "parent": "E3", "assignee": "kim" },
+    { "id": "S9", "kind": "story", "title": "Invoices", "status": "todo", "parent": "E3" },
+    { "id": "S10", "kind": "story", "title": "Metrics pipeline", "status": "blocked", "parent": "E4", "assignee": "ray" },
+    { "id": "S11", "kind": "story", "title": "Alerting", "status": "todo", "parent": "E4" },
+    { "id": "S12", "kind": "story", "title": "Dashboards", "status": "todo", "parent": "E4" },
+
+    { "id": "T1", "kind": "subtask", "title": "Form layout", "status": "done", "parent": "S1", "assignee": "lee" },
+    { "id": "T2", "kind": "subtask", "title": "Input validation", "status": "done", "parent": "S1", "assignee": "lee" },
+    { "id": "T3", "kind": "subtask", "title": "Google sign-in", "status": "done", "parent": "S2", "assignee": "ana" },
+    { "id": "T4", "kind": "subtask", "title": "GitHub sign-in", "status": "in_progress", "parent": "S2", "assignee": "ana" },
+    { "id": "T5", "kind": "subtask", "title": "DB schema", "status": "done", "parent": "S4", "assignee": "sam" },
+    { "id": "T6", "kind": "subtask", "title": "REST endpoints", "status": "in_progress", "parent": "S4", "assignee": "sam" },
+    { "id": "T7", "kind": "subtask", "title": "Webhook handler", "status": "todo", "parent": "S8" },
+    { "id": "T8", "kind": "subtask", "title": "Retry queue", "status": "todo", "parent": "S8" }
+  ],
+  "links": [
+    { "from": "T1", "to": "T2", "type": "blocks" },
+    { "from": "T5", "to": "T6", "type": "blocks" },
+    { "from": "T7", "to": "T8", "type": "blocks" },
+    { "from": "S1", "to": "S3", "type": "blocks" },
+    { "from": "S2", "to": "S3", "type": "blocks" },
+    { "from": "S4", "to": "S5", "type": "blocks" },
+    { "from": "S5", "to": "S6", "type": "blocks" },
+    { "from": "S1", "to": "S5", "type": "blocks" },
+    { "from": "T6", "to": "S5", "type": "blocks" },
+    { "from": "S7", "to": "S8", "type": "blocks" },
+    { "from": "S8", "to": "S9", "type": "blocks" },
+    { "from": "S10", "to": "S11", "type": "blocks" },
+    { "from": "S10", "to": "S12", "type": "blocks" },
+    { "from": "S5", "to": "S7", "type": "blocks" },
+    { "from": "S3", "to": "S8", "type": "blocks" },
+    { "from": "T3", "to": "T4", "type": "relates_to" },
+    { "from": "S6", "to": "S12", "type": "relates_to" },
+    { "from": "S9", "to": "S12", "type": "relates_to" },
+    { "from": "S2", "to": "T7", "type": "relates_to" },
+    { "from": "S11", "to": "S10", "type": "duplicates" }
+  ]
+}

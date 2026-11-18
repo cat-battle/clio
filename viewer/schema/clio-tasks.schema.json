@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cat-battle/clio/viewer/schema/clio-tasks.schema.json",
+  "title": "Clio task hierarchy",
+  "description": "Canonical interchange format consumed by every Clio viewer implementation. Items form a forest via `parent`; `links` are typed, directed relationships between any two items.",
+  "type": "object",
+  "required": ["version", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "links": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/link" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "required": ["id", "kind", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["milestone", "epic", "story", "subtask"] },
+        "title": { "type": "string" },
+        "status": { "enum": ["todo", "in_progress", "done", "blocked"], "default": "todo" },
+        "parent": { "type": ["string", "null"], "description": "id of the containing item; null/absent for top-level items" },
+        "assignee": { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["from", "to", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Open-ended relationship type in snake_case (e.g. blocks, relates_to, duplicates). Viewers offer a runtime toggle for every type present in the data."
+        }
+      }
+    }
+  }
+}
