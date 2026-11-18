@@ -35,13 +35,22 @@ def test_mocha_is_the_clik_catppuccin_palette():
     assert MOCHA.status_color(Status.DONE) == "#a6e3a1"
     _, st = styles(MOCHA)
     assert "#11111b/#89b4fa/1" in st, "selected box: crust on blue"
-    assert "#f38ba8/-/0" in st, "blocks wires in red"
+    assert "#f38ba8/#181825/0" in st, "blocks wires in red, on the mocha background"
+    assert "/-/" not in st, "every canvas cell has a background"
     assert "grey" not in st and "/blue/" not in st, "no ANSI colours left"
 
 
 def test_classic_keeps_the_ansi_look():
     _, st = styles(CLASSIC)
     assert "white/blue/1" in st and "red/-/0" in st and "#" not in st
+
+
+def test_mocha_paints_the_background_and_fills_cards():
+    _, st = styles(MOCHA, [" "])
+    assert "-/#181825/0" in st, "canvas background (mantle)"
+    assert "-/#313244/0" in st, "closed boxes are filled (surface0)"
+    _, classic = styles(CLASSIC, [" "])
+    assert "#" not in classic, "classic leaves the terminal background alone"
 
 
 def test_trace_dims_with_the_theme_faint_colour():
@@ -75,9 +84,11 @@ def test_theme_switch_in_textual_app():
     async def run():
         app = ClioViewer(ViewerState(Graph(sample_doc())))
         async with app.run_test(size=(160, 40)) as pilot:
+            assert app.theme == "catppuccin-mocha", "Textual's own widgets follow the palette"
+            assert app.query_one("#status").styles.background.hex == "#313244"
             await pilot.press("C")
             await pilot.pause()
-            assert app.state.theme is CLASSIC
+            assert app.state.theme is CLASSIC and app.theme == "textual-dark"
             assert "theme: classic" in str(app.query_one("#status").render())
             await pilot.press("question_mark")
             await pilot.pause()

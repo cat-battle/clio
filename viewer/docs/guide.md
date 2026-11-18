@@ -117,8 +117,8 @@ The viewer has two colour themes:
 
 | Theme | Looks like | Needs |
 |---|---|---|
-| `mocha` | The [Catppuccin Mocha](https://catppuccin.com/palette) pastel palette, the same one clik uses | A true-colour terminal (most modern terminals) |
-| `classic` | The 16 standard terminal colours | Any terminal |
+| `mocha` | The [Catppuccin Mocha](https://catppuccin.com/palette) pastel palette, the same one clik uses. The viewer paints its own dark background (mantle `#181825`), fills closed boxes like cards (surface0 `#313244`) and gives the status bar a matching panel colour. The Python version also switches Textual's widgets (popups, details panel, scrollbars) to Textual's `catppuccin-mocha` theme. | A true-colour terminal (most modern terminals) |
+| `classic` | The 16 standard terminal colours on the terminal's own background | Any terminal |
 
 The theme is chosen in this order:
 

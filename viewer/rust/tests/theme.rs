@@ -33,7 +33,8 @@ fn mocha_is_the_clik_catppuccin_palette() {
     assert_eq!(MOCHA.selected_bg, Color::Rgb(0x89, 0xb4, 0xfa));
     let (_, styles) = styles(&MOCHA, "");
     assert!(styles.contains("#11111b/#89b4fa/1"), "selected box: crust on blue");
-    assert!(styles.contains("#f38ba8/-/0"), "blocks wires in red");
+    assert!(styles.contains("#f38ba8/#181825/0"), "blocks wires in red, on the mocha background");
+    assert!(!styles.contains("/-/"), "every canvas cell has a background");
     assert!(!styles.contains("grey") && !styles.contains("/blue/"), "no ANSI colours left");
 }
 
@@ -60,4 +61,13 @@ fn shift_c_cycles_themes() {
     assert!(text.contains("theme: classic"));
     snapshot_styles(&mut a, 160, 40, &parse_keys("C").unwrap()).unwrap();
     assert_eq!(a.theme, &MOCHA);
+}
+
+#[test]
+fn mocha_paints_the_background_and_fills_cards() {
+    let (_, mocha) = styles(&MOCHA, "<space>");
+    assert!(mocha.contains("-/#181825/0"), "canvas background (mantle)");
+    assert!(mocha.contains("-/#313244/0"), "closed boxes are filled (surface0)");
+    let (_, classic) = styles(&CLASSIC, "<space>");
+    assert!(!classic.contains('#'), "classic leaves the terminal background alone");
 }

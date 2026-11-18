@@ -99,6 +99,8 @@ struct Pen<'b> {
     buf: &'b mut Buffer,
     area: Rect,
     cam: (i32, i32),
+    /// Background for styles that don't set one.
+    bg: Color,
 }
 
 impl Pen<'_> {
@@ -113,9 +115,13 @@ impl Pen<'_> {
     }
 
     fn put(&mut self, x: i32, y: i32, sym: &str, style: Style) {
+        let bg = self.bg;
         if let Some(c) = self.cell(x, y) {
             c.reset();
             c.set_symbol(sym).set_style(style);
+            if style.bg.is_none() {
+                c.set_bg(bg);
+            }
         }
     }
 
@@ -194,7 +200,12 @@ impl Canvas<'_> {
         let r = b.bounds;
         let (x0, y0, x1, y1) = (r.x, r.y, r.right() - 1, r.bottom() - 1);
 
-        let blank = Style::default();
+        // Closed boxes are filled like cards; open containers (and boxes
+        // greyed out by a trace) sit on the canvas background.
+        let outer = th.background;
+        let fill = if b.expanded || dimmed { outer } else { th.card };
+        pen.bg = outer;
+        let blank = Style::default().bg(fill);
         for y in y0 + 1..y1 {
             for x in x0 + 1..x1 {
                 pen.put(x, y, " ", blank);
@@ -226,6 +237,7 @@ impl Canvas<'_> {
         let kids = self.graph.children(b.node).len();
         let dim = Style::default().fg(if dimmed { th.faint } else { th.subtle });
         let plain = paint(Style::default().fg(th.body));
+        pen.bg = fill;
         let rows = r.h - 2; // text rows inside the border
         let w = inner.max(0) as usize;
         match self.zoom {
@@ -265,6 +277,7 @@ impl Canvas<'_> {
                 pen.text(x0 + 1, y0 + 1, &truncate(&item.id, inner as usize), inner, title_style);
             }
         }
+        pen.bg = outer;
         if kids > 0 {
             let tag = match self.zoom {
                 Zoom::Overview => "+".to_string(),
@@ -329,10 +342,19 @@ impl Canvas<'_> {
 
 impl Widget for Canvas<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(c) = buf.cell_mut((x, y)) {
+                    c.reset();
+                    c.set_bg(self.theme.background);
+                }
+            }
+        }
         let mut pen = Pen {
             buf,
             area,
             cam: self.camera,
+            bg: self.theme.background,
         };
         // Containers first, then wires, then leaf boxes on top of any wire that
         // happens to cross them, then the port marks on the borders.

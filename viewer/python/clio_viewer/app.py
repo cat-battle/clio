@@ -214,6 +214,11 @@ class ClioViewer(App[None]):
         return self.query_one(Canvas)
 
     def refresh_view(self) -> None:
+        th = self.state.theme
+        if self.theme != th.textual:
+            self.theme = th.textual  # popups, details panel, scrollbars
+        status = self.query_one("#status", Static)
+        status.styles.background = th.bar
         canvas = self.canvas
         if canvas.size.width and canvas.size.height:
             # Apply auto-fit / camera moves now so the status bar shows the

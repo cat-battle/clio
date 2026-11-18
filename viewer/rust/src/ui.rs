@@ -61,7 +61,7 @@ fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
         spans.push(Span::raw(query.clone()));
         spans.push(Span::styled("█", accent));
         spans.push(Span::styled("   enter: find · esc: cancel", dim));
-        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(th.bar)), area);
         return;
     }
 
@@ -110,11 +110,13 @@ fn draw_status(f: &mut Frame, app: &App, trace: Option<&Trace>, area: Rect) {
         Some(m) => spans.push(Span::styled(format!("  │ {m}"), accent)),
         None => spans.push(Span::styled("  │ ?: help", dim)),
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(th.bar)), area);
 }
 
 fn draw_details(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::bordered().title(" Details ");
+    let block = Block::bordered()
+        .title(" Details ")
+        .style(Style::default().bg(app.theme.background));
     let Some(n) = app.selected else {
         f.render_widget(Paragraph::new("nothing selected").block(block), area);
         return;
@@ -211,7 +213,7 @@ fn draw_relations(f: &mut Frame, app: &App, cursor: usize) {
     let area = centered(f.area(), 46, lines.len() as u16 + 2);
     f.render_widget(Clear, area);
     f.render_widget(
-        Paragraph::new(lines).block(Block::bordered().title(" Relationships ")),
+        Paragraph::new(lines).block(Block::bordered().title(" Relationships ").style(Style::default().bg(th.background))),
         area,
     );
 }
@@ -253,7 +255,11 @@ fn draw_help(f: &mut Frame, app: &App) {
     let area = centered(f.area(), 60, lines.len() as u16 + 2);
     f.render_widget(Clear, area);
     f.render_widget(
-        Paragraph::new(lines).block(Block::bordered().title(" Keys (any key closes) ")),
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .title(" Keys (any key closes) ")
+                .style(Style::default().bg(app.theme.background)),
+        ),
         area,
     );
 }

@@ -72,11 +72,12 @@ def wrap(text: str, width: int, max_lines: int) -> list[str]:
 class Grid:
     """A width x height matrix of (symbol, style) cells."""
 
-    def __init__(self, width: int, height: int) -> None:
+    def __init__(self, width: int, height: int, bg: str | None = None) -> None:
         self.width = width
         self.height = height
         self.chars = [[" "] * width for _ in range(height)]
-        self.styles = [[PLAIN_STYLE] * width for _ in range(height)]
+        blank = CellStyle(None, bg)
+        self.styles = [[blank] * width for _ in range(height)]
 
     def text_lines(self) -> list[str]:
         return ["".join(row) for row in self.chars]
@@ -99,9 +100,10 @@ class Grid:
 
 
 class _Pen:
-    def __init__(self, grid: Grid, camera: tuple[int, int]) -> None:
+    def __init__(self, grid: Grid, camera: tuple[int, int], bg: str | None = None) -> None:
         self.grid = grid
         self.cx, self.cy = camera
+        self.bg = bg  # background for styles that don't set one
 
     def _pos(self, x: int, y: int) -> tuple[int, int] | None:
         sx, sy = x - self.cx, y - self.cy
@@ -112,6 +114,8 @@ class _Pen:
     def put(self, x: int, y: int, sym: str, style: CellStyle) -> None:
         p = self._pos(x, y)
         if p:
+            if style.bg is None and self.bg is not None:
+                style = CellStyle(style.fg, self.bg, style.bold)
             self.grid.chars[p[1]][p[0]] = sym
             self.grid.styles[p[1]][p[0]] = style
 
@@ -156,8 +160,8 @@ def render_canvas(
     theme: Theme = MOCHA,
 ) -> Grid:
     """When ``trace`` is given, boxes and edges outside the cone are dimmed."""
-    grid = Grid(width, height)
-    pen = _Pen(grid, camera)
+    grid = Grid(width, height, theme.background)
+    pen = _Pen(grid, camera, theme.background)
     # Containers first, then wires, then leaf boxes on top of any wire that
     # happens to cross them, then the port marks on the borders.
     for b in layout.boxes:
@@ -203,9 +207,15 @@ def _draw_box(
     r = b.bounds
     x0, y0, x1, y1 = r.x, r.y, r.right - 1, r.bottom - 1
 
+    # Closed boxes are filled like cards; open containers (and boxes greyed
+    # out by a trace) sit on the canvas background.
+    outer = th.background
+    fill = outer if b.expanded or dimmed else th.card
+    pen.bg = outer
+    blank = CellStyle(None, fill)
     for y in range(y0 + 1, y1):
         for x in range(x0 + 1, x1):
-            pen.put(x, y, " ", PLAIN_STYLE)
+            pen.put(x, y, " ", blank)
     for x in range(x0 + 1, x1):
         pen.put(x, y0, horiz, bstyle)
         pen.put(x, y1, horiz, bstyle)
@@ -225,6 +235,7 @@ def _draw_box(
         pen.text(x1 - 3, y0, "[-]", 3, bstyle)
         return
 
+    pen.bg = fill
     dim = CellStyle(th.faint if dimmed else th.subtle)
     plain = paint(CellStyle(th.body))
     rows = r.h - 2  # text rows inside the border
@@ -254,6 +265,7 @@ def _draw_box(
     else:
         pen.text(x0 + 1, y0 + 1, truncate(item.id, inner), inner, title_style)
 
+    pen.bg = outer
     kids = len(graph.children(b.node))
     if kids:
         tag = "+" if zoom is Zoom.OVERVIEW else f"[+{kids}]"

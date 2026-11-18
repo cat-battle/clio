@@ -40,8 +40,9 @@ Border style shows the kind (═ milestone, ━ epic, ╭╮ story, ┌┐ subta
 colour shows status (grey todo, yellow in progress, green done, red blocked).
 
 Colours come from a theme. **mocha** (the default on true-colour terminals) is
-the Catppuccin Mocha palette that clik uses. **classic** uses the 16 standard
-terminal colours. Choose with `--theme`, `CLIO_THEME`, or `C` while running.
+the Catppuccin Mocha palette that clik uses, including its own background, card
+fills for closed boxes and a panel-coloured status bar. **classic** uses the 16
+standard terminal colours on the terminal's own background. Choose with `--theme`, `CLIO_THEME`, or `C` while running.
 
 ### Dependency tracing
 

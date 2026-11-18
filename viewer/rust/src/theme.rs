@@ -37,6 +37,12 @@ pub struct Theme {
     pub both: Color,
     pub selected_fg: Color,
     pub selected_bg: Color,
+    /// Canvas and panel background (`Reset` = the terminal's own).
+    pub background: Color,
+    /// Fill of collapsed boxes ("cards").
+    pub card: Color,
+    /// Status bar background.
+    pub bar: Color,
 }
 
 const fn hex(rgb: u32) -> Color {
@@ -70,6 +76,10 @@ pub const MOCHA: Theme = Theme {
     both: hex(0xfab387),        // peach
     selected_fg: hex(0x11111b), // crust
     selected_bg: hex(0x89b4fa), // blue
+    // Same as Textual's built-in catppuccin-mocha theme (used by the Python port).
+    background: hex(0x181825), // mantle
+    card: hex(0x313244),       // surface0
+    bar: hex(0x313244),        // surface0
 };
 
 /// The original 16-colour look.
@@ -94,6 +104,9 @@ pub const CLASSIC: Theme = Theme {
     both: Color::LightYellow,
     selected_fg: Color::White,
     selected_bg: Color::Blue,
+    background: Color::Reset,
+    card: Color::Reset,
+    bar: Color::Reset,
 };
 
 pub const THEMES: [&Theme; 2] = [&MOCHA, &CLASSIC];

@@ -31,6 +31,10 @@ class Theme:
     both: str
     selected_fg: str
     selected_bg: str
+    background: str | None  # canvas and panel background (None = the terminal's)
+    card: str | None  # fill of collapsed boxes
+    bar: str | None  # status bar background
+    textual: str  # Textual theme for the app's own widgets (popups, details, scrollbars)
 
     def status_color(self, s: Status) -> str:
         return self.status[[Status.TODO, Status.IN_PROGRESS, Status.DONE, Status.BLOCKED].index(s)]
@@ -74,6 +78,11 @@ MOCHA = Theme(
     both="#fab387",  # peach
     selected_fg="#11111b",  # crust
     selected_bg="#89b4fa",  # blue
+    # Same as Textual's built-in catppuccin-mocha theme, which the app switches to.
+    background="#181825",  # mantle
+    card="#313244",  # surface0
+    bar="#313244",  # surface0
+    textual="catppuccin-mocha",
 )
 
 # The original 16-colour look.
@@ -98,6 +107,10 @@ CLASSIC = Theme(
     both="bright_yellow",
     selected_fg="white",
     selected_bg="blue",
+    background=None,
+    card=None,
+    bar=None,
+    textual="textual-dark",
 )
 
 THEMES: list[Theme] = [MOCHA, CLASSIC]
